@@ -1,0 +1,25 @@
+{
+  "pdf_path": "/Users/rainwu/Projects/FamilyGenealogyBook/1前编-68页.pdf",
+  "shared_pages_dir": "/Users/rainwu/Projects/FamilyGenealogyBook/pages_jpg_qianbian_011_028",
+  "groups": [
+    { "group_id": "gen_001_005", "label": "1-5世", "generations": [1, 2, 3, 4, 5], "pages": [11] },
+    { "group_id": "gen_006_010", "label": "6-10世", "generations": [6, 7, 8, 9, 10], "pages": [12] },
+    { "group_id": "gen_011_015", "label": "11-15世", "generations": [11, 12, 13, 14, 15], "pages": [12] },
+    { "group_id": "gen_016_020", "label": "16-20世", "generations": [16, 17, 18, 19, 20], "pages": [13] },
+    { "group_id": "gen_021_025", "label": "21-25世", "generations": [21, 22, 23, 24, 25], "pages": [14] },
+    { "group_id": "gen_026_030", "label": "26-30世", "generations": [26, 27, 28, 29, 30], "pages": [15] },
+    { "group_id": "gen_031_035", "label": "31-35世", "generations": [31, 32, 33, 34, 35], "pages": [15, 16] },
+    { "group_id": "gen_036_040", "label": "36-40世", "generations": [36, 37, 38, 39, 40], "pages": [16] },
+    { "group_id": "gen_041_045", "label": "41-45世", "generations": [41, 42, 43, 44, 45], "pages": [17] },
+    { "group_id": "gen_046_050", "label": "46-50世", "generations": [46, 47, 48, 49, 50], "pages": [17, 18] },
+    { "group_id": "gen_051_055", "label": "51-55世", "generations": [51, 52, 53, 54, 55], "pages": [18] },
+    { "group_id": "gen_056_060", "label": "56-60世", "generations": [56, 57, 58, 59, 60], "pages": [19] },
+    { "group_id": "gen_061_065", "label": "61-65世", "generations": [61, 62, 63, 64, 65], "pages": [19, 20] },
+    { "group_id": "gen_066_070", "label": "66-70世", "generations": [66, 67, 68, 69, 70], "pages": [21] },
+    { "group_id": "gen_071_075", "label": "71-75世", "generations": [71, 72, 73, 74, 75], "pages": [22] },
+    { "group_id": "gen_076_080", "label": "76-80世", "generations": [76, 77, 78, 79, 80], "pages": [23, 24] },
+    { "group_id": "gen_081_085", "label": "81-85世", "generations": [81, 82, 83, 84, 85], "pages": [25] },
+    { "group_id": "gen_086_090", "label": "86-90世", "generations": [86, 87, 88, 89, 90], "pages": [26, 27] },
+    { "group_id": "gen_091_095", "label": "91-95世", "generations": [91, 92, 93, 94, 95], "pages": [27, 28] }
+  ]
+}
