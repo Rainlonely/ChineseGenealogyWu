@@ -14,7 +14,7 @@ class HistoryRepository:
         search_like = f"%{query}%"
         conn = connect(self.db_path)
         try:
-            rows = conn.execute(
+            primary_rows = conn.execute(
                 """
                 SELECT
                   p.id,
@@ -37,6 +37,16 @@ class HistoryRepository:
                     WHERE la.historical_person_ref = p.id
                       AND la.status = 'active'
                   ) AS has_modern_extension
+                  ,
+                  CASE
+                    WHEN p.name = ? OR COALESCE(p.canonical_name, '') = ? THEN 'primary_exact'
+                    ELSE 'primary_fuzzy'
+                  END AS match_type,
+                  CASE
+                    WHEN p.name = ? THEN p.name
+                    WHEN COALESCE(p.canonical_name, '') = ? THEN p.canonical_name
+                    ELSE p.name
+                  END AS matched_name
                 FROM persons AS p
                 WHERE p.name LIKE ? OR COALESCE(p.canonical_name, '') LIKE ?
                 ORDER BY
@@ -46,9 +56,73 @@ class HistoryRepository:
                   p.name
                 LIMIT ?
                 """,
-                (search_like, search_like, query, limit),
+                (query, query, query, query, search_like, search_like, query, limit),
             ).fetchall()
-            return [dict(row) for row in rows]
+            alias_rows = conn.execute(
+                """
+                SELECT
+                  p.id,
+                  p.name,
+                  p.generation,
+                  (
+                    SELECT fp.name
+                    FROM relationships AS r
+                    JOIN persons AS fp
+                      ON fp.id = r.parent_person_id
+                    WHERE r.child_person_id = p.id
+                    ORDER BY r.id
+                    LIMIT 1
+                  ) AS father_name,
+                  EXISTS (
+                    SELECT 1 FROM person_biographies AS pb WHERE pb.person_id = p.id
+                  ) AS has_biography,
+                  EXISTS (
+                    SELECT 1 FROM lineage_attachments AS la
+                    WHERE la.historical_person_ref = p.id
+                      AND la.status = 'active'
+                  ) AS has_modern_extension,
+                  CASE
+                    WHEN psa.alias_text = ? THEN 'alias_exact'
+                    ELSE 'alias_fuzzy'
+                  END AS match_type,
+                  psa.alias_text AS matched_name
+                FROM person_search_aliases AS psa
+                JOIN persons AS p
+                  ON p.id = psa.person_ref
+                WHERE psa.person_source = 'historical'
+                  AND psa.status = 'active'
+                  AND psa.alias_text LIKE ?
+                ORDER BY
+                  CASE WHEN psa.alias_text = ? THEN 0 ELSE 1 END,
+                  p.generation,
+                  p.primary_page_no,
+                  p.name
+                LIMIT ?
+                """,
+                (query, search_like, query, limit),
+            ).fetchall()
+
+            deduped: Dict[str, Dict[str, Any]] = {}
+            priority = {
+                "primary_exact": 0,
+                "alias_exact": 1,
+                "primary_fuzzy": 2,
+                "alias_fuzzy": 3,
+            }
+            for row in [*primary_rows, *alias_rows]:
+                item = dict(row)
+                current = deduped.get(item["id"])
+                if not current or priority[item["match_type"]] < priority[current["match_type"]]:
+                    deduped[item["id"]] = item
+            rows = sorted(
+                deduped.values(),
+                key=lambda item: (
+                    priority[item["match_type"]],
+                    item.get("generation") or 9999,
+                    item.get("name") or "",
+                ),
+            )
+            return rows[:limit]
         finally:
             conn.close()
 

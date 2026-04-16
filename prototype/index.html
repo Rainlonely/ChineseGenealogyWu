@@ -19,6 +19,7 @@
           <button class="nav-link" data-screen-target="results">查询结果页</button>
           <button class="nav-link" data-screen-target="detail">人物详情页</button>
           <button class="nav-link" data-screen-target="branch">支系展开页</button>
+          <button class="nav-link" data-screen-target="correction">姓名勘误页</button>
           <button class="nav-link" data-screen-target="contribute">补充后代页</button>
         </nav>
       </aside>
@@ -93,6 +94,7 @@
 
           <div class="footer-actions">
             <button class="secondary-action" data-go-screen="branch">展开完整支系图</button>
+            <button class="secondary-action" data-go-screen="correction">姓名勘误</button>
             <button class="primary-action" data-go-screen="contribute">补充后代信息</button>
           </div>
         </section>
@@ -131,6 +133,46 @@
               <div id="tree-columns" class="hanging-tree-canvas full-tree"></div>
             </div>
           </div>
+        </section>
+
+        <section class="screen" id="screen-correction" data-screen="correction">
+          <div class="screen-header">
+            <p class="page-kicker">姓名勘误页</p>
+            <h2 id="correction-heading">提交姓名校对申请</h2>
+            <p class="page-copy">当你发现人物姓名可能存在录入或校对误差时，可提交勘误申请，由后台审核后处理。</p>
+          </div>
+
+          <form class="panel contribute-form">
+            <div class="form-grid">
+              <label>
+                <span>当前人物</span>
+                <input id="correction-target-name" type="text" readonly />
+              </label>
+              <label>
+                <span>当前姓名</span>
+                <input id="correction-current-value" type="text" readonly />
+              </label>
+              <label>
+                <span>建议更正为</span>
+                <input id="correction-proposed-value" type="text" placeholder="例如：永昌" />
+              </label>
+              <label>
+                <span>联系方式</span>
+                <input id="correction-contact" type="text" placeholder="例如：微信 / 手机号" />
+              </label>
+            </div>
+            <label class="full-width">
+              <span>更正依据</span>
+              <textarea id="correction-reason" rows="4" placeholder="例如：家中抄本、页图核对、同页字辈一致等。"></textarea>
+            </label>
+            <div class="submit-row">
+              <div class="notice-box">
+                提交后进入待审核队列，可被处理为“改正式姓名”或“加入搜索别名”。
+              </div>
+              <button type="button" class="primary-action" id="correction-submit">提交姓名勘误</button>
+            </div>
+            <div class="notice-box" id="correction-status">当前只支持姓名勘误，提交后不会直接改动正式族谱数据。</div>
+          </form>
         </section>
 
         <section class="screen" id="screen-contribute" data-screen="contribute">

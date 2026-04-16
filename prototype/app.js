@@ -29,6 +29,12 @@ const toggleSpousesWrap = document.getElementById("toggle-spouses-wrap");
 const detailBranchNote = document.getElementById("detail-branch-note");
 const branchScreenNote = document.getElementById("branch-screen-note");
 const routeNote = document.getElementById("route-note");
+const correctionTargetName = document.getElementById("correction-target-name");
+const correctionCurrentValue = document.getElementById("correction-current-value");
+const correctionProposedValue = document.getElementById("correction-proposed-value");
+const correctionContact = document.getElementById("correction-contact");
+const correctionReason = document.getElementById("correction-reason");
+const correctionStatus = document.getElementById("correction-status");
 
 function switchScreen(screenName) {
   state.activeScreen = screenName;
@@ -66,6 +72,10 @@ function setContributeStatus(message) {
   document.getElementById("contribute-status").textContent = message;
 }
 
+function setCorrectionStatus(message) {
+  correctionStatus.textContent = message;
+}
+
 function setTreeNote(element, message) {
   element.hidden = !message;
   element.textContent = message || "";
@@ -80,6 +90,15 @@ function updateBranchControlsVisibility() {
 function updateContributeHeading() {
   const name = state.selectedPerson ? state.selectedPerson.name : "当前人物";
   document.getElementById("contribute-heading").textContent = `为 ${name} 提交现代续修信息`;
+}
+
+function updateCorrectionForm() {
+  const name = state.selectedPerson ? state.selectedPerson.name : "当前人物";
+  document.getElementById("correction-heading").textContent = `为 ${name} 提交姓名校对申请`;
+  correctionTargetName.value = state.selectedPerson
+    ? `${state.selectedPerson.name}（${state.selectedPerson.generation_label}）`
+    : "";
+  correctionCurrentValue.value = state.selectedPerson ? state.selectedPerson.name : "";
 }
 
 function escapeHtml(value) {
@@ -340,7 +359,18 @@ function renderResults() {
       switchScreen("contribute");
     });
 
+    const correctionButton = document.createElement("button");
+    correctionButton.type = "button";
+    correctionButton.className = "inline-action";
+    correctionButton.textContent = "姓名勘误";
+    correctionButton.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await selectPerson(person);
+      switchScreen("correction");
+    });
+
     actions.appendChild(bioButton);
+    actions.appendChild(correctionButton);
     actions.appendChild(contributeButton);
     card.appendChild(actions);
     resultList.appendChild(card);
@@ -452,8 +482,26 @@ async function selectPerson(person) {
   state.selectedPerson = person;
   updateBranchControlsVisibility();
   updateContributeHeading();
+  updateCorrectionForm();
   await renderDetail();
   switchScreen("detail");
+}
+
+function buildCorrectionPayload() {
+  if (!state.selectedPerson) {
+    throw new Error("请先选中一个人物，再提交姓名勘误。");
+  }
+  return {
+    target_person_ref: state.selectedPerson.person_ref,
+    target_person_source: state.selectedPerson.person_source,
+    submitter_name: "原型用户",
+    submitter_contact: correctionContact.value.trim() || null,
+    field_name: "name",
+    current_value: correctionCurrentValue.value.trim() || state.selectedPerson.name,
+    proposed_value: correctionProposedValue.value.trim(),
+    reason: correctionReason.value.trim(),
+    evidence_note: correctionReason.value.trim() || null,
+  };
 }
 
 function buildSubmissionPayload() {
@@ -495,6 +543,24 @@ async function submitContribution() {
     body: JSON.stringify(payload),
   });
   setContributeStatus(`提交成功，审核编号 #${result.submission_id}，当前状态：${result.status}。`);
+}
+
+async function submitCorrection() {
+  const payload = buildCorrectionPayload();
+  if (!payload.proposed_value) {
+    setCorrectionStatus("请先填写建议更正后的姓名。");
+    return;
+  }
+  if (!payload.reason) {
+    setCorrectionStatus("请填写更正依据，便于后台核对。");
+    return;
+  }
+  setCorrectionStatus("正在提交姓名勘误申请...");
+  const result = await fetchJson("/api/v1/corrections", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  setCorrectionStatus(`提交成功，勘误编号 #${result.correction_id}，当前状态：${result.status}。`);
 }
 
 document.querySelectorAll("[data-go-screen]").forEach((button) => {
@@ -551,6 +617,14 @@ document.getElementById("contribute-submit").addEventListener("click", async () 
   }
 });
 
+document.getElementById("correction-submit").addEventListener("click", async () => {
+  try {
+    await submitCorrection();
+  } catch (error) {
+    setCorrectionStatus(`提交失败：${error.message}`);
+  }
+});
+
 [upwardRange, downwardRange, toggleDaughters, toggleSpouses].forEach((control) => {
   control.addEventListener("input", async () => {
     upwardValue.textContent = `${upwardRange.value} 代`;
@@ -567,6 +641,7 @@ document.getElementById("contribute-submit").addEventListener("click", async () 
 renderResults();
 setSearchStatus(`当前 API：${apiBase}。默认示例词可用：永昌`);
 updateContributeHeading();
+updateCorrectionForm();
 updateBranchControlsVisibility();
 upwardValue.textContent = `${upwardRange.value} 代`;
 downwardValue.textContent = `${downwardRange.value} 代`;

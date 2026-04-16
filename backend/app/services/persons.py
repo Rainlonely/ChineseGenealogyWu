@@ -27,6 +27,10 @@ class PersonService:
         names = [item["name"] for item in items[:4]]
         return " / ".join(names) if names else fallback_name
 
+    @staticmethod
+    def _is_auto_person_ref(person_ref: str) -> bool:
+        return person_ref.startswith("p_auto_")
+
     def search_persons(self, query: str, limit: int) -> Dict[str, Any]:
         historical_rows = self.history_repo.search_persons(query, limit)
         modern_rows = self.modern_repo.search_persons(query, limit)
@@ -42,7 +46,9 @@ class PersonService:
                     "has_biography": bool(row["has_biography"]),
                     "has_modern_extension": bool(row["has_modern_extension"]),
                     "summary_route": self._build_route_summary("historical", row["id"], row["name"]),
-                    "match_reason": "姓名精确或模糊匹配",
+                    "match_reason": "按主名或别名命中",
+                    "matched_name": row["matched_name"],
+                    "match_type": row["match_type"],
                 }
             )
         for row in modern_rows:
@@ -56,10 +62,54 @@ class PersonService:
                     "has_biography": bool(row["has_biography"]),
                     "has_modern_extension": bool(row["has_modern_extension"]),
                     "summary_route": self._build_route_summary("modern", row["id"], row["display_name"]),
-                    "match_reason": "现代续修姓名匹配",
+                    "match_reason": "按主名或别名命中",
+                    "matched_name": row["matched_name"],
+                    "match_type": row["match_type"],
                 }
             )
-        items = items[:limit]
+        priority = {
+            "primary_exact": 0,
+            "alias_exact": 1,
+            "primary_fuzzy": 2,
+            "alias_fuzzy": 3,
+        }
+        items.sort(
+            key=lambda item: (
+                priority[item["match_type"]],
+                item["person_source"] != "historical",
+                item["name"],
+            )
+        )
+        deduped: Dict[str, Dict[str, Any]] = {}
+        for item in items:
+            key = f'{item["person_source"]}:{item["person_ref"]}'
+            if key not in deduped:
+                deduped[key] = item
+        items = list(deduped.values())
+
+        collapsed: Dict[str, Dict[str, Any]] = {}
+        for item in items:
+            signature = "|".join(
+                [
+                    item["person_source"],
+                    item["name"],
+                    item.get("father_name") or "",
+                    item["generation_label"],
+                    item["summary_route"],
+                ]
+            )
+            existing = collapsed.get(signature)
+            if not existing:
+                collapsed[signature] = item
+                continue
+            if (
+                item["person_source"] == "historical"
+                and self._is_auto_person_ref(existing["person_ref"])
+                and not self._is_auto_person_ref(item["person_ref"])
+            ):
+                collapsed[signature] = item
+
+        items = list(collapsed.values())[:limit]
         return {"items": items, "total": len(items)}
 
     def get_person_detail(self, person_source: str, person_ref: str) -> Dict[str, Any]:

@@ -3,6 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.common import HealthResponse
+from app.schemas.corrections import (
+    CorrectionApproveRequest,
+    CorrectionCreateRequest,
+    CorrectionCreateResponse,
+    CorrectionListResponse,
+    CorrectionRejectRequest,
+    CorrectionReviewResponse,
+)
 from app.schemas.persons import (
     BiographyResponse,
     BranchResponse,
@@ -19,7 +27,7 @@ from app.schemas.submissions import (
 )
 
 
-def build_router(person_service, submission_service, settings) -> APIRouter:
+def build_router(person_service, submission_service, correction_service, settings) -> APIRouter:
     router = APIRouter()
 
     @router.get("/health", response_model=HealthResponse)
@@ -78,9 +86,18 @@ def build_router(person_service, submission_service, settings) -> APIRouter:
         payload = submission_service.create_submission(request.model_dump())
         return SubmissionCreateResponse(**payload)
 
+    @router.post("/api/v1/corrections", response_model=CorrectionCreateResponse, status_code=201)
+    def create_correction(request: CorrectionCreateRequest) -> CorrectionCreateResponse:
+        payload = correction_service.create_correction_submission(request.model_dump())
+        return CorrectionCreateResponse(**payload)
+
     @router.get("/api/v1/admin/submissions", response_model=SubmissionListResponse)
     def list_submissions() -> SubmissionListResponse:
         return SubmissionListResponse(**submission_service.list_submissions())
+
+    @router.get("/api/v1/admin/corrections", response_model=CorrectionListResponse)
+    def list_corrections() -> CorrectionListResponse:
+        return CorrectionListResponse(**correction_service.list_correction_submissions())
 
     @router.post("/api/v1/admin/submissions/{submission_id}/approve", response_model=ReviewResponse)
     def approve_submission(submission_id: int, request: ReviewRequest) -> ReviewResponse:
@@ -97,6 +114,30 @@ def build_router(person_service, submission_service, settings) -> APIRouter:
         try:
             payload = submission_service.reject_submission(submission_id, request.review_note)
             return ReviewResponse(**payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.post("/api/v1/admin/corrections/{correction_id}/approve", response_model=CorrectionReviewResponse)
+    def approve_correction(correction_id: int, request: CorrectionApproveRequest) -> CorrectionReviewResponse:
+        try:
+            payload = correction_service.approve_correction_submission(
+                correction_id,
+                request.resolution_type,
+                request.review_note,
+            )
+            return CorrectionReviewResponse(**payload)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.post("/api/v1/admin/corrections/{correction_id}/reject", response_model=CorrectionReviewResponse)
+    def reject_correction(correction_id: int, request: CorrectionRejectRequest) -> CorrectionReviewResponse:
+        try:
+            payload = correction_service.reject_correction_submission(correction_id, request.review_note)
+            return CorrectionReviewResponse(**payload)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:

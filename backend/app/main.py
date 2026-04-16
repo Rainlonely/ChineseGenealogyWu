@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import build_router
 from app.db.connection import init_modern_schema
+from app.services.corrections import CorrectionService
 from app.services.persons import PersonService
 from app.services.submissions import SubmissionService
 from app.settings import Settings, get_settings
@@ -24,7 +25,8 @@ def create_app(custom_settings: Settings | None = None) -> FastAPI:
     )
     person_service = PersonService(settings.db_path)
     submission_service = SubmissionService(settings.db_path)
-    app.include_router(build_router(person_service, submission_service, settings))
+    correction_service = CorrectionService(settings.db_path)
+    app.include_router(build_router(person_service, submission_service, correction_service, settings))
     return app
 
 

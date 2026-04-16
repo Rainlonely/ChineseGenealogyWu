@@ -8,6 +8,7 @@ const mobileScreenTitles = {
   results: "查询结果页",
   detail: "人物详情页",
   branch: "支系展开页",
+  correction: "姓名勘误页",
   contribute: "补充后代页",
 };
 
@@ -35,6 +36,12 @@ const mobileToggleSpousesWrap = document.getElementById("mobile-toggle-spouses-w
 const mobileDetailBranchNote = document.getElementById("mobile-detail-branch-note");
 const mobileBranchScreenNote = document.getElementById("mobile-branch-screen-note");
 const mobileRouteNote = document.getElementById("mobile-route-note");
+const mobileCorrectionTargetName = document.getElementById("mobile-correction-target-name");
+const mobileCorrectionCurrentValue = document.getElementById("mobile-correction-current-value");
+const mobileCorrectionProposedValue = document.getElementById("mobile-correction-proposed-value");
+const mobileCorrectionContact = document.getElementById("mobile-correction-contact");
+const mobileCorrectionReason = document.getElementById("mobile-correction-reason");
+const mobileCorrectionStatus = document.getElementById("mobile-correction-status");
 
 function switchMobileScreen(screenName) {
   mobileState.activeScreen = screenName;
@@ -85,6 +92,10 @@ function setMobileContributeStatus(message) {
   document.getElementById("mobile-contribute-status").textContent = message;
 }
 
+function setMobileCorrectionStatus(message) {
+  mobileCorrectionStatus.textContent = message;
+}
+
 function setMobileTreeNote(element, message) {
   element.hidden = !message;
   element.textContent = message || "";
@@ -99,6 +110,15 @@ function updateMobileBranchControlsVisibility() {
 function updateMobileContributeHeading() {
   const name = mobileState.selectedPerson ? mobileState.selectedPerson.name : "当前人物";
   document.getElementById("mobile-contribute-heading").textContent = `为 ${name} 提交现代续修线索`;
+}
+
+function updateMobileCorrectionForm() {
+  const name = mobileState.selectedPerson ? mobileState.selectedPerson.name : "当前人物";
+  document.getElementById("mobile-correction-heading").textContent = `为 ${name} 提交姓名校对申请`;
+  mobileCorrectionTargetName.value = mobileState.selectedPerson
+    ? `${mobileState.selectedPerson.name}（${mobileState.selectedPerson.generation_label}）`
+    : "";
+  mobileCorrectionCurrentValue.value = mobileState.selectedPerson ? mobileState.selectedPerson.name : "";
 }
 
 function mobileRelationBadge(node) {
@@ -297,6 +317,7 @@ function renderMobileResults() {
       </div>
       <div class="result-mobile-actions">
         <span class="result-action-label">看小传</span>
+        <span class="result-action-label">姓名勘误</span>
         <span class="result-action-label">补充后代</span>
       </div>
     `;
@@ -410,8 +431,26 @@ async function selectMobilePerson(person) {
   mobileState.selectedPerson = person;
   updateMobileBranchControlsVisibility();
   updateMobileContributeHeading();
+  updateMobileCorrectionForm();
   await renderMobileDetail();
   switchMobileScreen("detail");
+}
+
+function buildMobileCorrectionPayload() {
+  if (!mobileState.selectedPerson) {
+    throw new Error("请先选中一个人物，再提交姓名勘误。");
+  }
+  return {
+    target_person_ref: mobileState.selectedPerson.person_ref,
+    target_person_source: mobileState.selectedPerson.person_source,
+    submitter_name: "原型用户",
+    submitter_contact: mobileCorrectionContact.value.trim() || null,
+    field_name: "name",
+    current_value: mobileCorrectionCurrentValue.value.trim() || mobileState.selectedPerson.name,
+    proposed_value: mobileCorrectionProposedValue.value.trim(),
+    reason: mobileCorrectionReason.value.trim(),
+    evidence_note: mobileCorrectionReason.value.trim() || null,
+  };
 }
 
 function buildMobileSubmissionPayload() {
@@ -455,6 +494,24 @@ async function submitMobileContribution() {
   setMobileContributeStatus(`提交成功，审核编号 #${result.submission_id}，当前状态：${result.status}。`);
 }
 
+async function submitMobileCorrection() {
+  const payload = buildMobileCorrectionPayload();
+  if (!payload.proposed_value) {
+    setMobileCorrectionStatus("请先填写建议更正后的姓名。");
+    return;
+  }
+  if (!payload.reason) {
+    setMobileCorrectionStatus("请填写更正依据，便于后台核对。");
+    return;
+  }
+  setMobileCorrectionStatus("正在提交姓名勘误申请...");
+  const result = await fetchJson("/api/v1/corrections", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  setMobileCorrectionStatus(`提交成功，勘误编号 #${result.correction_id}，当前状态：${result.status}。`);
+}
+
 document.querySelectorAll("[data-mobile-screen]").forEach((button) => {
   button.addEventListener("click", async () => {
     const target = button.dataset.mobileScreen;
@@ -495,6 +552,14 @@ document.getElementById("mobile-contribute-submit").addEventListener("click", as
   }
 });
 
+document.getElementById("mobile-correction-submit").addEventListener("click", async () => {
+  try {
+    await submitMobileCorrection();
+  } catch (error) {
+    setMobileCorrectionStatus(`提交失败：${error.message}`);
+  }
+});
+
 [mobileUpwardRange, mobileDownwardRange, mobileToggleDaughters, mobileToggleSpouses].forEach((control) => {
   control.addEventListener("input", async () => {
     mobileUpwardValue.textContent = `${mobileUpwardRange.value} 代`;
@@ -511,6 +576,7 @@ document.getElementById("mobile-contribute-submit").addEventListener("click", as
 setMobileSearchStatus(`当前 API：${apiBase}。默认示例词可用：永昌`);
 renderMobileResults();
 updateMobileContributeHeading();
+updateMobileCorrectionForm();
 updateMobileBranchControlsVisibility();
 mobileUpwardValue.textContent = `${mobileUpwardRange.value} 代`;
 mobileDownwardValue.textContent = `${mobileDownwardRange.value} 代`;

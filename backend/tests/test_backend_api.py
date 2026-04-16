@@ -42,6 +42,22 @@ def test_search_same_name_returns_list(tmp_path: Path) -> None:
         assert "generation_label" in item
 
 
+def test_search_collapses_auto_duplicates_with_same_visible_signature(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    response = client.get("/api/v1/search/persons", params={"q": "茂"})
+    assert response.status_code == 200
+    items = response.json()["items"]
+    matches = [
+        item
+        for item in items
+        if item["name"] == "茂"
+        and item["father_name"] == "度爱宗"
+        and item["generation_label"] == "第93世"
+    ]
+    assert len(matches) == 1
+    assert matches[0]["person_ref"] != "p_auto_93_10"
+
+
 def test_biography_unavailable_for_unknown_person(tmp_path: Path) -> None:
     client = build_client(tmp_path)
     response = client.get("/api/v1/persons/historical/not-found/biography")
@@ -123,3 +139,60 @@ def test_historical_route_stays_historical_only(tmp_path: Path) -> None:
     assert isinstance(body["has_modern_extension"], bool)
     for item in body["items"]:
         assert item["person_source"] == "historical"
+
+
+def test_correction_submission_can_be_created_and_listed(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    payload = {
+        "target_person_ref": "p_168_005",
+        "target_person_source": "historical",
+        "submitter_name": "测试用户",
+        "submitter_contact": "wechat:test",
+        "field_name": "name",
+        "current_value": "永昌",
+        "proposed_value": "永长",
+        "reason": "疑似录入误差",
+        "evidence_note": "家中记忆版本",
+    }
+    create_response = client.post("/api/v1/corrections", json=payload)
+    assert create_response.status_code == 201
+    correction_id = create_response.json()["correction_id"]
+
+    list_response = client.get("/api/v1/admin/corrections")
+    assert list_response.status_code == 200
+    assert any(item["id"] == correction_id for item in list_response.json()["items"])
+
+
+def test_alias_correction_can_make_search_match(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    create_response = client.post(
+        "/api/v1/corrections",
+        json={
+            "target_person_ref": "p_168_005",
+            "target_person_source": "historical",
+            "submitter_name": "测试用户",
+            "submitter_contact": "wechat:test",
+            "field_name": "name",
+            "current_value": "永昌",
+            "proposed_value": "永长",
+            "reason": "测试作为别名处理",
+            "evidence_note": "测试别名命中",
+        },
+    )
+    correction_id = create_response.json()["correction_id"]
+
+    approve_response = client.post(
+        f"/api/v1/admin/corrections/{correction_id}/approve",
+        json={"resolution_type": "apply_as_alias", "review_note": "作为别名收录"},
+    )
+    assert approve_response.status_code == 200
+
+    search_response = client.get("/api/v1/search/persons", params={"q": "永长"})
+    assert search_response.status_code == 200
+    items = search_response.json()["items"]
+    assert any(
+        item["person_ref"] == "p_168_005"
+        and item["person_source"] == "historical"
+        and item["match_type"] == "alias_exact"
+        for item in items
+    )

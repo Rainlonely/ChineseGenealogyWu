@@ -16,7 +16,7 @@ class ModernRepository:
         search_like = f"%{query}%"
         conn = connect(self.db_path)
         try:
-            rows = conn.execute(
+            primary_rows = conn.execute(
                 """
                 SELECT
                   mp.id,
@@ -44,6 +44,12 @@ class ModernRepository:
                       AND child.from_person_source = 'modern'
                       AND child.relation_type IN ('father_son', 'father_daughter', 'mother_son', 'mother_daughter')
                   ) AS has_modern_extension
+                  ,
+                  CASE
+                    WHEN mp.display_name = ? THEN 'primary_exact'
+                    ELSE 'primary_fuzzy'
+                  END AS match_type,
+                  mp.display_name AS matched_name
                 FROM modern_persons AS mp
                 WHERE mp.status = 'active'
                   AND mp.display_name LIKE ?
@@ -53,9 +59,77 @@ class ModernRepository:
                   mp.id ASC
                 LIMIT ?
                 """,
-                (search_like, query, limit),
+                (query, search_like, query, limit),
             ).fetchall()
-            return [dict(row) for row in rows]
+            alias_rows = conn.execute(
+                """
+                SELECT
+                  mp.id,
+                  mp.display_name,
+                  (
+                    SELECT parent.display_name
+                    FROM modern_relationships AS mr
+                    JOIN modern_persons AS parent
+                      ON parent.id = mr.from_person_ref
+                    WHERE mr.to_person_ref = mp.id
+                      AND mr.to_person_source = 'modern'
+                      AND mr.from_person_source = 'modern'
+                      AND mr.relation_type IN ('father_son', 'father_daughter', 'mother_son', 'mother_daughter')
+                    ORDER BY mr.id
+                    LIMIT 1
+                  ) AS father_name,
+                  CASE
+                    WHEN COALESCE(mp.bio, '') <> '' THEN 1
+                    ELSE 0
+                  END AS has_biography,
+                  EXISTS (
+                    SELECT 1
+                    FROM modern_relationships AS child
+                    WHERE child.from_person_ref = mp.id
+                      AND child.from_person_source = 'modern'
+                      AND child.relation_type IN ('father_son', 'father_daughter', 'mother_son', 'mother_daughter')
+                  ) AS has_modern_extension,
+                  CASE
+                    WHEN psa.alias_text = ? THEN 'alias_exact'
+                    ELSE 'alias_fuzzy'
+                  END AS match_type,
+                  psa.alias_text AS matched_name
+                FROM person_search_aliases AS psa
+                JOIN modern_persons AS mp
+                  ON mp.id = psa.person_ref
+                WHERE psa.person_source = 'modern'
+                  AND psa.status = 'active'
+                  AND mp.status = 'active'
+                  AND psa.alias_text LIKE ?
+                ORDER BY
+                  CASE WHEN psa.alias_text = ? THEN 0 ELSE 1 END,
+                  mp.display_name ASC,
+                  mp.id ASC
+                LIMIT ?
+                """,
+                (query, search_like, query, limit),
+            ).fetchall()
+            deduped: Dict[str, Dict[str, Any]] = {}
+            priority = {
+                "primary_exact": 0,
+                "alias_exact": 1,
+                "primary_fuzzy": 2,
+                "alias_fuzzy": 3,
+            }
+            for row in [*primary_rows, *alias_rows]:
+                item = dict(row)
+                current = deduped.get(item["id"])
+                if not current or priority[item["match_type"]] < priority[current["match_type"]]:
+                    deduped[item["id"]] = item
+            rows = sorted(
+                deduped.values(),
+                key=lambda item: (
+                    priority[item["match_type"]],
+                    item.get("display_name") or "",
+                    item.get("id") or "",
+                ),
+            )
+            return rows[:limit]
         finally:
             conn.close()
 
@@ -297,6 +371,198 @@ class ModernRepository:
             return int(cursor.lastrowid)
         finally:
             conn.close()
+
+    def create_correction_submission(self, payload: Dict[str, Any]) -> int:
+        conn = connect(self.db_path)
+        try:
+            cursor = conn.execute(
+                """
+                INSERT INTO correction_submissions (
+                  target_person_ref,
+                  target_person_source,
+                  field_name,
+                  current_value,
+                  proposed_value,
+                  submitter_name,
+                  submitter_contact,
+                  reason,
+                  evidence_note,
+                  status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                """,
+                (
+                    payload["target_person_ref"],
+                    payload["target_person_source"],
+                    payload["field_name"],
+                    payload.get("current_value"),
+                    payload["proposed_value"],
+                    payload["submitter_name"],
+                    payload.get("submitter_contact"),
+                    payload.get("reason"),
+                    payload.get("evidence_note"),
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+        finally:
+            conn.close()
+
+    def list_correction_submissions(self) -> List[Dict[str, Any]]:
+        conn = connect(self.db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM correction_submissions
+                ORDER BY created_at DESC, id DESC
+                """
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+    def get_correction_submission(self, correction_id: int) -> Optional[Dict[str, Any]]:
+        conn = connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT * FROM correction_submissions WHERE id = ?",
+                (correction_id,),
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def add_person_alias(
+        self,
+        person_ref: str,
+        person_source: str,
+        alias_text: str,
+        alias_type: str,
+        source_submission_id: Optional[int] = None,
+    ) -> None:
+        if not alias_text:
+            return
+        conn = connect(self.db_path)
+        try:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO person_search_aliases (
+                  person_ref,
+                  person_source,
+                  alias_text,
+                  alias_type,
+                  source_submission_id,
+                  status
+                ) VALUES (?, ?, ?, ?, ?, 'active')
+                """,
+                (person_ref, person_source, alias_text, alias_type, source_submission_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def reject_correction_submission(self, correction_id: int, review_note: Optional[str]) -> Dict[str, Any]:
+        conn = connect(self.db_path)
+        try:
+            conn.execute(
+                """
+                UPDATE correction_submissions
+                SET status = 'rejected',
+                    review_note = ?,
+                    reviewed_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                  AND status = 'pending'
+                """,
+                (review_note, correction_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"correction_id": correction_id, "status": "rejected"}
+
+    def approve_correction_submission(
+        self,
+        correction_id: int,
+        resolution_type: str,
+        review_note: Optional[str],
+    ) -> Dict[str, Any]:
+        correction = self.get_correction_submission(correction_id)
+        if not correction:
+            raise KeyError(f"Correction submission {correction_id} not found")
+        if correction["status"] == "approved":
+            return {"correction_id": correction_id, "status": "approved"}
+        if correction["status"] == "rejected":
+            raise ValueError("Rejected correction cannot be approved")
+
+        person_ref = correction["target_person_ref"]
+        person_source = correction["target_person_source"]
+        current_value = correction.get("current_value")
+        proposed_value = correction["proposed_value"]
+
+        conn = connect(self.db_path)
+        try:
+            if resolution_type == "apply_as_primary":
+                if person_source == "historical":
+                    conn.execute(
+                        """
+                        UPDATE persons
+                        SET name = ?, canonical_name = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (proposed_value, proposed_value, person_ref),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE modern_persons
+                        SET display_name = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (proposed_value, person_ref),
+                    )
+                if current_value and current_value != proposed_value:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO person_search_aliases (
+                          person_ref,
+                          person_source,
+                          alias_text,
+                          alias_type,
+                          source_submission_id,
+                          status
+                        ) VALUES (?, ?, ?, 'correction_accepted', ?, 'active')
+                        """,
+                        (person_ref, person_source, current_value, correction_id),
+                    )
+            if proposed_value:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO person_search_aliases (
+                      person_ref,
+                      person_source,
+                      alias_text,
+                      alias_type,
+                      source_submission_id,
+                      status
+                    ) VALUES (?, ?, ?, 'correction_accepted', ?, 'active')
+                    """,
+                    (person_ref, person_source, proposed_value, correction_id),
+                )
+            conn.execute(
+                """
+                UPDATE correction_submissions
+                SET status = 'approved',
+                    resolution_type = ?,
+                    review_note = ?,
+                    reviewed_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (resolution_type, review_note, correction_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"correction_id": correction_id, "status": "approved"}
 
     def list_submissions(self) -> List[Dict[str, Any]]:
         conn = connect(self.db_path)

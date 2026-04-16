@@ -67,6 +67,38 @@ CREATE TABLE IF NOT EXISTS change_submissions (
   reviewed_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS person_search_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_ref TEXT NOT NULL,
+  person_source TEXT NOT NULL CHECK (person_source IN ('historical', 'modern')),
+  alias_text TEXT NOT NULL,
+  alias_type TEXT NOT NULL DEFAULT 'manual_alias' CHECK (
+    alias_type IN ('manual_alias', 'correction_accepted', 'ocr_variant', 'simplified_variant', 'traditional_variant')
+  ),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  source_submission_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (person_ref, person_source, alias_text)
+);
+
+CREATE TABLE IF NOT EXISTS correction_submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_person_ref TEXT NOT NULL,
+  target_person_source TEXT NOT NULL CHECK (target_person_source IN ('historical', 'modern')),
+  field_name TEXT NOT NULL CHECK (field_name IN ('name')),
+  current_value TEXT,
+  proposed_value TEXT NOT NULL,
+  submitter_name TEXT NOT NULL,
+  submitter_contact TEXT,
+  reason TEXT,
+  evidence_note TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  resolution_type TEXT CHECK (resolution_type IN ('apply_as_primary', 'apply_as_alias')),
+  review_note TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_modern_persons_display_name
   ON modern_persons(display_name);
 
@@ -81,3 +113,9 @@ CREATE INDEX IF NOT EXISTS idx_lineage_attachments_historical
 
 CREATE INDEX IF NOT EXISTS idx_change_submissions_status
   ON change_submissions(status, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_person_search_aliases_lookup
+  ON person_search_aliases(person_source, alias_text, status);
+
+CREATE INDEX IF NOT EXISTS idx_correction_submissions_status
+  ON correction_submissions(status, created_at);

@@ -86,6 +86,7 @@
 
             <div class="sticky-actions">
               <button class="secondary-button" type="button" data-mobile-screen="branch">完整支系图</button>
+              <button class="secondary-button" type="button" data-mobile-screen="correction">姓名勘误</button>
               <button class="primary-button" type="button" data-mobile-screen="contribute">补充后代信息</button>
             </div>
           </section>
@@ -200,6 +201,43 @@
               <p class="helper-copy" id="mobile-contribute-status">当前会提交到审核队列，不会直接写入正式族谱。</p>
             </form>
           </section>
+
+          <section class="mobile-screen" data-mobile-view="correction">
+            <div class="section-head compact">
+              <div>
+                <p class="section-kicker">姓名勘误页</p>
+                <h2 id="mobile-correction-heading">提交姓名校对申请</h2>
+              </div>
+            </div>
+
+            <form class="card form-card">
+              <label>
+                <span>当前人物</span>
+                <input id="mobile-correction-target-name" type="text" readonly />
+              </label>
+              <label>
+                <span>当前姓名</span>
+                <input id="mobile-correction-current-value" type="text" readonly />
+              </label>
+              <label>
+                <span>建议更正为</span>
+                <input id="mobile-correction-proposed-value" type="text" placeholder="例如：永昌" />
+              </label>
+              <label>
+                <span>联系方式</span>
+                <input id="mobile-correction-contact" type="text" placeholder="例如：微信 / 手机号" />
+              </label>
+              <label>
+                <span>更正依据</span>
+                <textarea id="mobile-correction-reason" rows="4" placeholder="例如：家中抄本、页图核对、同页字辈一致等。"></textarea>
+              </label>
+              <div class="notice-card">
+                提交后进入待审核队列，可被处理为正式更正或搜索别名。
+              </div>
+              <button class="primary-button wide" type="button" id="mobile-correction-submit">提交姓名勘误</button>
+              <p class="helper-copy" id="mobile-correction-status">当前只支持姓名勘误，提交后不会直接改动正式族谱数据。</p>
+            </form>
+          </section>
         </main>
 
         <nav class="bottom-nav" aria-label="底部导航">
@@ -207,6 +245,7 @@
           <button class="bottom-link" type="button" data-mobile-screen="results">结果</button>
           <button class="bottom-link" type="button" data-mobile-screen="detail">人物</button>
           <button class="bottom-link" type="button" data-mobile-screen="branch">支系</button>
+          <button class="bottom-link" type="button" data-mobile-screen="correction">勘误</button>
           <button class="bottom-link" type="button" data-mobile-screen="contribute">续修</button>
         </nav>
       </div>

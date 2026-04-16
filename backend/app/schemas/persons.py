@@ -18,6 +18,8 @@ class SearchPersonItem(BaseModel):
     has_modern_extension: bool
     summary_route: str
     match_reason: str
+    matched_name: str
+    match_type: Literal["primary_exact", "primary_fuzzy", "alias_exact", "alias_fuzzy"]
 
 
 class SearchPersonsResponse(BaseModel):
