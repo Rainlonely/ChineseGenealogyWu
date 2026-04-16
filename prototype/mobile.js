@@ -16,7 +16,25 @@ const mobileState = {
   query: "永昌",
   results: [],
   selectedPerson: null,
+  previewBranch: null,
+  fullBranch: null,
 };
+
+const mobileUpwardRange = document.getElementById("mobile-upward-range");
+const mobileDownwardRange = document.getElementById("mobile-downward-range");
+const mobileUpwardValue = document.getElementById("mobile-upward-value");
+const mobileDownwardValue = document.getElementById("mobile-downward-value");
+const mobileToggleDaughters = document.getElementById("mobile-toggle-daughters");
+const mobileToggleSpouses = document.getElementById("mobile-toggle-spouses");
+const mobilePreviewCanvas = document.getElementById("mobile-branch-preview");
+const mobilePreviewSvg = document.getElementById("mobile-branch-preview-svg");
+const mobileTreeCanvas = document.getElementById("mobile-tree-columns");
+const mobileTreeSvg = document.getElementById("mobile-tree-columns-svg");
+const mobileToggleDaughtersWrap = document.getElementById("mobile-toggle-daughters-wrap");
+const mobileToggleSpousesWrap = document.getElementById("mobile-toggle-spouses-wrap");
+const mobileDetailBranchNote = document.getElementById("mobile-detail-branch-note");
+const mobileBranchScreenNote = document.getElementById("mobile-branch-screen-note");
+const mobileRouteNote = document.getElementById("mobile-route-note");
 
 function switchMobileScreen(screenName) {
   mobileState.activeScreen = screenName;
@@ -43,6 +61,16 @@ async function fetchJson(path, options = {}) {
   return body;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char]);
+}
+
 function mobileSelectedRef() {
   return mobileState.selectedPerson
     ? `${mobileState.selectedPerson.person_source}/${mobileState.selectedPerson.person_ref}`
@@ -57,9 +85,191 @@ function setMobileContributeStatus(message) {
   document.getElementById("mobile-contribute-status").textContent = message;
 }
 
+function setMobileTreeNote(element, message) {
+  element.hidden = !message;
+  element.textContent = message || "";
+}
+
+function updateMobileBranchControlsVisibility() {
+  const showModernFilters = mobileState.selectedPerson?.person_source === "modern";
+  mobileToggleDaughtersWrap.hidden = !showModernFilters;
+  mobileToggleSpousesWrap.hidden = !showModernFilters;
+}
+
 function updateMobileContributeHeading() {
   const name = mobileState.selectedPerson ? mobileState.selectedPerson.name : "当前人物";
   document.getElementById("mobile-contribute-heading").textContent = `为 ${name} 提交现代续修线索`;
+}
+
+function mobileRelationBadge(node) {
+  if (node.node_type === "focus") return "本人";
+  if (node.node_type === "spouse") return "配偶";
+  if (node.node_type === "ancestor") return "上代";
+  if (node.relation_type.includes("daughter")) return "女";
+  if (node.relation_type.includes("son")) return "子";
+  return "后代";
+}
+
+function mobileBuildTreeLayout(columns, options = {}) {
+  const nodeWidth = options.nodeWidth ?? 72;
+  const nodeHeight = options.nodeHeight ?? 154;
+  const tagWidth = options.tagWidth ?? 48;
+  const horizontalGap = options.horizontalGap ?? 14;
+  const verticalGap = options.verticalGap ?? 24;
+  const padding = options.padding ?? 14;
+  const columnGap = options.columnGap ?? 26;
+
+  const positions = new Map();
+  const metrics = [];
+  let currentY = padding;
+  let maxWidth = 0;
+
+  columns.forEach((column, columnIndex) => {
+    const nodes = column.nodes || [];
+    const rowWidth = nodes.length
+      ? nodes.length * nodeWidth + Math.max(0, nodes.length - 1) * horizontalGap
+      : nodeWidth;
+    const contentX = padding + tagWidth + columnGap;
+    maxWidth = Math.max(maxWidth, contentX + rowWidth + padding);
+
+    metrics.push({
+      columnIndex,
+      label: column.label,
+      generation: column.generation,
+      rowY: currentY,
+      contentX,
+      rowHeight: nodeHeight,
+    });
+
+    nodes.forEach((node, nodeIndex) => {
+      positions.set(`${columnIndex}:${node.person_source}:${node.person_ref}`, {
+        x: contentX + nodeIndex * (nodeWidth + horizontalGap),
+        y: currentY,
+        width: nodeWidth,
+        height: nodeHeight,
+      });
+    });
+
+    currentY += nodeHeight + verticalGap;
+  });
+
+  return {
+    positions,
+    metrics,
+    width: Math.max(maxWidth, 280),
+    height: Math.max(currentY - verticalGap + padding, 220),
+  };
+}
+
+function createSvgNode(tag, attrs = {}) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+  return node;
+}
+
+function drawMobileHangTree(svg, canvas, payload, options = {}) {
+  svg.innerHTML = "";
+  canvas.innerHTML = "";
+
+  if (!payload || !payload.columns?.length) {
+    canvas.innerHTML = `<div class="notice-card">当前人物附近暂无可展示的支系结构。</div>`;
+    return;
+  }
+
+  const { positions, metrics, width, height } = mobileBuildTreeLayout(payload.columns, options);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.width = `${width}px`;
+  svg.style.height = `${height}px`;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+
+  metrics.forEach((row) => {
+    const tag = document.createElement("div");
+    tag.className = "mobile-generation-tag";
+    tag.style.left = "12px";
+    tag.style.top = `${row.rowY}px`;
+    tag.style.height = `${row.rowHeight}px`;
+    tag.innerHTML = `
+      <strong>${escapeHtml(row.label)}</strong>
+      <span>${escapeHtml(row.generation ? `第${row.generation}世` : "现代续修")}</span>
+    `;
+    canvas.appendChild(tag);
+  });
+
+  for (let index = 0; index < payload.columns.length - 1; index += 1) {
+    const fromColumn = payload.columns[index];
+    const toColumn = payload.columns[index + 1];
+    if (!fromColumn.nodes?.length || !toColumn.nodes?.length) continue;
+
+    const sourceNode =
+      fromColumn.nodes.find((node) => node.node_type === "focus") ||
+      fromColumn.nodes.find((node) => node.node_type === "ancestor") ||
+      fromColumn.nodes[0];
+
+    const source = positions.get(`${index}:${sourceNode.person_source}:${sourceNode.person_ref}`);
+    if (!source) continue;
+
+    const sourceX = source.x + source.width / 2;
+    const sourceBottom = source.y + source.height;
+    const targets = toColumn.nodes
+      .map((node) => positions.get(`${index + 1}:${node.person_source}:${node.person_ref}`))
+      .filter(Boolean);
+    if (!targets.length) continue;
+
+    const busY = sourceBottom + (options.busOffset ?? 14);
+    const targetXs = targets.map((position) => position.x + position.width / 2);
+    svg.appendChild(
+      createSvgNode("path", {
+        d: `M ${sourceX} ${sourceBottom} V ${busY}`,
+        class: fromColumn.nodes.some((node) => node.node_type === "focus")
+          ? "mobile-graph-edge-lite is-focus"
+          : "mobile-graph-edge-lite",
+      }),
+    );
+    if (targetXs.length > 1) {
+      svg.appendChild(
+        createSvgNode("path", {
+          d: `M ${Math.min(...targetXs)} ${busY} H ${Math.max(...targetXs)}`,
+          class: "mobile-graph-edge-lite",
+        }),
+      );
+    }
+    targets.forEach((target) => {
+      const childX = target.x + target.width / 2;
+      svg.appendChild(
+        createSvgNode("path", {
+          d: `M ${childX} ${busY} V ${target.y}`,
+          class: "mobile-graph-edge-lite",
+        }),
+      );
+    });
+  }
+
+  payload.columns.forEach((column, columnIndex) => {
+    column.nodes.forEach((node) => {
+      const position = positions.get(`${columnIndex}:${node.person_source}:${node.person_ref}`);
+      if (!position) return;
+      const card = document.createElement("div");
+      card.className = [
+        "mobile-tree-node-vertical",
+        node.node_type === "focus" ? "is-focus" : "",
+        node.node_type === "spouse" ? "is-spouse" : "",
+        node.person_source === "modern" ? "is-modern" : "",
+        node.relation_type.includes("daughter") ? "is-daughter" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      card.style.left = `${position.x}px`;
+      card.style.top = `${position.y}px`;
+      card.style.width = `${position.width}px`;
+      card.style.height = `${position.height}px`;
+      card.innerHTML = `
+        <div class="vertical-name">${escapeHtml(node.name)}</div>
+        <div class="vertical-meta">${escapeHtml(mobileRelationBadge(node))}</div>
+      `;
+      canvas.appendChild(card);
+    });
+  });
 }
 
 function renderMobileResults() {
@@ -76,10 +286,10 @@ function renderMobileResults() {
     card.innerHTML = `
       <div class="result-mobile-top">
         <div>
-          <strong>${person.name}</strong>
-          <p class="helper-copy">父名：${person.father_name || "未识别"}</p>
+          <strong>${escapeHtml(person.name)}</strong>
+          <p class="helper-copy">父名：${escapeHtml(person.father_name || "未识别")}</p>
         </div>
-        <span class="pill ${person.has_modern_extension ? "" : "muted"}">${person.generation_label}</span>
+        <span class="pill ${person.has_modern_extension ? "" : "muted"}">${escapeHtml(person.generation_label)}</span>
       </div>
       <div class="result-mobile-meta">
         <span>人物小传：${person.has_biography ? "有" : "无"}</span>
@@ -104,8 +314,8 @@ function renderMobileRoute(items) {
     li.innerHTML = `
       <div class="timeline-gen">${item.generation ? `${item.generation}世` : "现代"}</div>
       <div class="timeline-copy">
-        <strong>${item.name}</strong>
-        <p>${item.note}</p>
+        <strong>${escapeHtml(item.name)}</strong>
+        <p>${escapeHtml(item.note)}</p>
       </div>
     `;
     routeList.appendChild(li);
@@ -115,10 +325,11 @@ function renderMobileRoute(items) {
 async function renderMobileDetail() {
   if (!mobileState.selectedPerson) return;
   const ref = mobileSelectedRef();
-  const [detail, biography, route] = await Promise.all([
+  const [detail, biography, route, previewBranch] = await Promise.all([
     fetchJson(`/api/v1/persons/${ref}`),
     fetchJson(`/api/v1/persons/${ref}/biography`),
     fetchJson(`/api/v1/persons/${ref}/route`),
+    fetchJson(`/api/v1/persons/${ref}/branch?up=1&down=1&include_daughters=true&include_spouses=true`),
   ]);
   const item = detail.item;
   document.getElementById("mobile-detail-name").textContent = item.name;
@@ -130,6 +341,53 @@ async function renderMobileDetail() {
       ? biography.text_punctuated || biography.text_linear || biography.text_raw || "已收录人物小传"
       : "当前没有可展示的人物小传。";
   renderMobileRoute(route.items);
+  setMobileTreeNote(
+    mobileRouteNote,
+    item.person_source === "historical" ? route.modern_extension_note : null,
+  );
+  mobileState.previewBranch = previewBranch;
+  setMobileTreeNote(
+    mobileDetailBranchNote,
+    item.person_source === "historical" ? item.modern_extension_note : null,
+  );
+  drawMobileHangTree(mobilePreviewSvg, mobilePreviewCanvas, previewBranch, {
+    nodeWidth: 66,
+    nodeHeight: 148,
+    tagWidth: 42,
+    horizontalGap: 12,
+    verticalGap: 22,
+    columnGap: 24,
+    busOffset: 12,
+  });
+}
+
+async function renderMobileBranchScreen() {
+  if (!mobileState.selectedPerson) {
+    mobileTreeCanvas.innerHTML = `<div class="notice-card">请先在查询结果里选择一个人物。</div>`;
+    mobileTreeSvg.innerHTML = "";
+    return;
+  }
+  mobileUpwardValue.textContent = `${mobileUpwardRange.value} 代`;
+  mobileDownwardValue.textContent = `${mobileDownwardRange.value} 代`;
+  updateMobileBranchControlsVisibility();
+  const ref = mobileSelectedRef();
+  const branch = await fetchJson(
+    `/api/v1/persons/${ref}/branch?up=${mobileUpwardRange.value}&down=${mobileDownwardRange.value}&include_daughters=${mobileToggleDaughters.checked}&include_spouses=${mobileToggleSpouses.checked}`,
+  );
+  mobileState.fullBranch = branch;
+  setMobileTreeNote(
+    mobileBranchScreenNote,
+    mobileState.selectedPerson.person_source === "historical" ? branch.focus.modern_extension_note : null,
+  );
+  drawMobileHangTree(mobileTreeSvg, mobileTreeCanvas, branch, {
+    nodeWidth: 72,
+    nodeHeight: 154,
+    tagWidth: 48,
+    horizontalGap: 14,
+    verticalGap: 24,
+    columnGap: 26,
+    busOffset: 14,
+  });
 }
 
 async function searchMobilePersons() {
@@ -150,6 +408,7 @@ async function searchMobilePersons() {
 
 async function selectMobilePerson(person) {
   mobileState.selectedPerson = person;
+  updateMobileBranchControlsVisibility();
   updateMobileContributeHeading();
   await renderMobileDetail();
   switchMobileScreen("detail");
@@ -197,7 +456,17 @@ async function submitMobileContribution() {
 }
 
 document.querySelectorAll("[data-mobile-screen]").forEach((button) => {
-  button.addEventListener("click", () => switchMobileScreen(button.dataset.mobileScreen));
+  button.addEventListener("click", async () => {
+    const target = button.dataset.mobileScreen;
+    if (target === "branch") {
+      try {
+        await renderMobileBranchScreen();
+      } catch (error) {
+        mobileTreeCanvas.innerHTML = `<div class="notice-card">支系图加载失败：${escapeHtml(error.message)}</div>`;
+      }
+    }
+    switchMobileScreen(target);
+  });
 });
 
 document.getElementById("mobile-search-submit").addEventListener("click", async () => {
@@ -226,6 +495,22 @@ document.getElementById("mobile-contribute-submit").addEventListener("click", as
   }
 });
 
+[mobileUpwardRange, mobileDownwardRange, mobileToggleDaughters, mobileToggleSpouses].forEach((control) => {
+  control.addEventListener("input", async () => {
+    mobileUpwardValue.textContent = `${mobileUpwardRange.value} 代`;
+    mobileDownwardValue.textContent = `${mobileDownwardRange.value} 代`;
+    if (mobileState.activeScreen !== "branch" || !mobileState.selectedPerson) return;
+    try {
+      await renderMobileBranchScreen();
+    } catch (error) {
+      mobileTreeCanvas.innerHTML = `<div class="notice-card">支系图加载失败：${escapeHtml(error.message)}</div>`;
+    }
+  });
+});
+
 setMobileSearchStatus(`当前 API：${apiBase}。默认示例词可用：永昌`);
 renderMobileResults();
 updateMobileContributeHeading();
+updateMobileBranchControlsVisibility();
+mobileUpwardValue.textContent = `${mobileUpwardRange.value} 代`;
+mobileDownwardValue.textContent = `${mobileDownwardRange.value} 代`;

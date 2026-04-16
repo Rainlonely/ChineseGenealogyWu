@@ -8,10 +8,27 @@ const state = {
   query: "永昌",
   results: [],
   selectedPerson: null,
+  previewBranch: null,
+  fullBranch: null,
 };
 
 const resultList = document.getElementById("result-list");
 const routeList = document.getElementById("route-list");
+const branchPreview = document.getElementById("branch-preview");
+const branchPreviewSvg = document.getElementById("branch-preview-svg");
+const treeColumns = document.getElementById("tree-columns");
+const treeColumnsSvg = document.getElementById("tree-columns-svg");
+const upwardRange = document.getElementById("upward-range");
+const downwardRange = document.getElementById("downward-range");
+const upwardValue = document.getElementById("upward-value");
+const downwardValue = document.getElementById("downward-value");
+const toggleDaughters = document.getElementById("toggle-daughters");
+const toggleSpouses = document.getElementById("toggle-spouses");
+const toggleDaughtersWrap = document.getElementById("toggle-daughters-wrap");
+const toggleSpousesWrap = document.getElementById("toggle-spouses-wrap");
+const detailBranchNote = document.getElementById("detail-branch-note");
+const branchScreenNote = document.getElementById("branch-screen-note");
+const routeNote = document.getElementById("route-note");
 
 function switchScreen(screenName) {
   state.activeScreen = screenName;
@@ -49,9 +66,221 @@ function setContributeStatus(message) {
   document.getElementById("contribute-status").textContent = message;
 }
 
+function setTreeNote(element, message) {
+  element.hidden = !message;
+  element.textContent = message || "";
+}
+
+function updateBranchControlsVisibility() {
+  const showModernFilters = state.selectedPerson?.person_source === "modern";
+  toggleDaughtersWrap.hidden = !showModernFilters;
+  toggleSpousesWrap.hidden = !showModernFilters;
+}
+
 function updateContributeHeading() {
   const name = state.selectedPerson ? state.selectedPerson.name : "当前人物";
   document.getElementById("contribute-heading").textContent = `为 ${name} 提交现代续修信息`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char]);
+}
+
+function relationBadge(node) {
+  if (node.node_type === "focus") return "本人";
+  if (node.node_type === "spouse") return "配偶";
+  if (node.node_type === "ancestor") return "上代";
+  if (node.relation_type.includes("daughter")) return "女";
+  if (node.relation_type.includes("son")) return "子";
+  return "后代";
+}
+
+function describeColumn(column) {
+  if (column.generation) {
+    return `${column.label} / 第${column.generation}世`;
+  }
+  return column.label;
+}
+
+function buildTreeLayout(columns, options = {}) {
+  const nodeWidth = options.nodeWidth ?? 84;
+  const nodeHeight = options.nodeHeight ?? 176;
+  const tagWidth = options.tagWidth ?? 56;
+  const horizontalGap = options.horizontalGap ?? 24;
+  const verticalGap = options.verticalGap ?? 34;
+  const padding = options.padding ?? 18;
+  const columnGap = options.columnGap ?? 48;
+
+  const positions = new Map();
+  const metrics = [];
+  let currentY = padding;
+  let maxWidth = 0;
+
+  columns.forEach((column, columnIndex) => {
+    const nodes = column.nodes || [];
+    const rowWidth = nodes.length
+      ? nodes.length * nodeWidth + Math.max(0, nodes.length - 1) * horizontalGap
+      : nodeWidth;
+    const contentX = padding + tagWidth + columnGap;
+    const rowHeight = nodeHeight;
+    const rowWidthWithMeta = contentX + rowWidth + padding;
+    maxWidth = Math.max(maxWidth, rowWidthWithMeta);
+
+    metrics.push({
+      columnIndex,
+      label: column.label,
+      generation: column.generation,
+      rowY: currentY,
+      contentX,
+      rowWidth,
+      rowHeight,
+      nodeCount: nodes.length,
+    });
+
+    nodes.forEach((node, nodeIndex) => {
+      const x = contentX + nodeIndex * (nodeWidth + horizontalGap);
+      positions.set(`${columnIndex}:${node.person_source}:${node.person_ref}`, {
+        x,
+        y: currentY,
+        width: nodeWidth,
+        height: nodeHeight,
+      });
+    });
+
+    currentY += rowHeight + verticalGap;
+  });
+
+  return {
+    positions,
+    metrics,
+    width: Math.max(maxWidth, 360),
+    height: Math.max(currentY - verticalGap + padding, 220),
+  };
+}
+
+function createSvgNode(tag, attrs = {}) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+  return node;
+}
+
+function drawHangTree(svg, canvas, payload, options = {}) {
+  svg.innerHTML = "";
+  canvas.innerHTML = "";
+
+  if (!payload || !payload.columns?.length) {
+    canvas.innerHTML = `<div class="notice-box">当前人物附近暂无可展示的支系结构。</div>`;
+    return;
+  }
+
+  const { positions, metrics, width, height } = buildTreeLayout(payload.columns, options);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.width = `${width}px`;
+  svg.style.height = `${height}px`;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+
+  metrics.forEach((row) => {
+    const tag = document.createElement("div");
+    tag.className = "tree-generation-tag";
+    tag.style.left = "18px";
+    tag.style.top = `${row.rowY}px`;
+    tag.style.height = `${row.rowHeight}px`;
+    tag.innerHTML = `
+      <strong>${escapeHtml(row.label)}</strong>
+      <span>${escapeHtml(row.generation ? `第${row.generation}世` : "现代续修")}</span>
+    `;
+    canvas.appendChild(tag);
+  });
+
+  for (let index = 0; index < payload.columns.length - 1; index += 1) {
+    const fromColumn = payload.columns[index];
+    const toColumn = payload.columns[index + 1];
+    if (!fromColumn.nodes?.length || !toColumn.nodes?.length) continue;
+
+    const sourceNode =
+      fromColumn.nodes.find((node) => node.node_type === "focus") ||
+      fromColumn.nodes.find((node) => node.node_type === "ancestor") ||
+      fromColumn.nodes[0];
+
+    const sourceKey = `${index}:${sourceNode.person_source}:${sourceNode.person_ref}`;
+    const sourcePosition = positions.get(sourceKey);
+    if (!sourcePosition) continue;
+
+    const sourceX = sourcePosition.x + sourcePosition.width / 2;
+    const sourceBottom = sourcePosition.y + sourcePosition.height;
+    const targetPositions = toColumn.nodes
+      .map((node) => positions.get(`${index + 1}:${node.person_source}:${node.person_ref}`))
+      .filter(Boolean);
+    if (!targetPositions.length) continue;
+
+    const topPoints = targetPositions.map((position) => position.x + position.width / 2);
+    const busY = sourceBottom + (options.busOffset ?? 18);
+    const busClass = fromColumn.nodes.some((node) => node.node_type === "focus")
+      ? "graph-edge-lite is-focus"
+      : "graph-edge-lite";
+
+    svg.appendChild(
+      createSvgNode("path", {
+        d: `M ${sourceX} ${sourceBottom} V ${busY}`,
+        class: busClass,
+      }),
+    );
+
+    if (topPoints.length > 1) {
+      svg.appendChild(
+        createSvgNode("path", {
+          d: `M ${Math.min(...topPoints)} ${busY} H ${Math.max(...topPoints)}`,
+          class: "graph-edge-lite",
+        }),
+      );
+    }
+
+    targetPositions.forEach((position) => {
+      const childX = position.x + position.width / 2;
+      svg.appendChild(
+        createSvgNode("path", {
+          d: `M ${childX} ${busY} V ${position.y}`,
+          class: "graph-edge-lite",
+        }),
+      );
+    });
+  }
+
+  payload.columns.forEach((column, columnIndex) => {
+    column.nodes.forEach((node) => {
+      const key = `${columnIndex}:${node.person_source}:${node.person_ref}`;
+      const position = positions.get(key);
+      if (!position) return;
+
+      const card = document.createElement("div");
+      const relation = relationBadge(node);
+      card.className = [
+        "tree-node-vertical",
+        node.node_type === "focus" ? "is-focus" : "",
+        node.node_type === "spouse" ? "is-spouse" : "",
+        node.person_source === "modern" ? "is-modern" : "",
+        node.relation_type.includes("daughter") ? "is-daughter" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      card.style.left = `${position.x}px`;
+      card.style.top = `${position.y}px`;
+      card.style.width = `${position.width}px`;
+      card.style.height = `${position.height}px`;
+      card.innerHTML = `
+        <div class="vertical-name">${escapeHtml(node.name)}</div>
+        <div class="vertical-meta">${escapeHtml(relation)}</div>
+      `;
+      canvas.appendChild(card);
+    });
+  });
 }
 
 function renderResults() {
@@ -67,16 +296,16 @@ function renderResults() {
     card.className = "result-card";
     card.innerHTML = `
       <span class="result-name">
-        <strong>${person.name}</strong>
+        <strong>${escapeHtml(person.name)}</strong>
         <span class="cell-label">整行可点击查看人物详情</span>
       </span>
       <span class="result-cell">
         <span class="cell-label">父名</span>
-        <span>${person.father_name || "未识别"}</span>
+        <span>${escapeHtml(person.father_name || "未识别")}</span>
       </span>
       <span class="result-cell">
         <span class="cell-label">世代</span>
-        <span>${person.generation_label}</span>
+        <span>${escapeHtml(person.generation_label)}</span>
       </span>
       <span class="result-cell">
         <span class="cell-label">人物小传</span>
@@ -125,8 +354,8 @@ function renderRoute(items) {
     entry.innerHTML = `
       <div class="route-generation">${item.generation ? `${item.generation}世` : "现代"}</div>
       <div class="route-person">
-        <strong>${item.name}</strong>
-        <div class="preview-meta">${item.note}</div>
+        <strong>${escapeHtml(item.name)}</strong>
+        <div class="preview-meta">${escapeHtml(item.note)}</div>
       </div>
     `;
     routeList.appendChild(entry);
@@ -136,10 +365,11 @@ function renderRoute(items) {
 async function renderDetail() {
   if (!state.selectedPerson) return;
   const ref = selectedRef();
-  const [detail, biography, route] = await Promise.all([
+  const [detail, biography, route, previewBranch] = await Promise.all([
     fetchJson(`/api/v1/persons/${ref}`),
     fetchJson(`/api/v1/persons/${ref}/biography`),
     fetchJson(`/api/v1/persons/${ref}/route`),
+    fetchJson(`/api/v1/persons/${ref}/branch?up=1&down=1&include_daughters=true&include_spouses=true`),
   ]);
 
   const item = detail.item;
@@ -153,6 +383,53 @@ async function renderDetail() {
       : "当前没有可展示的人物小传。";
 
   renderRoute(route.items);
+  setTreeNote(
+    routeNote,
+    item.person_source === "historical" ? route.modern_extension_note : null,
+  );
+  state.previewBranch = previewBranch;
+  setTreeNote(
+    detailBranchNote,
+    item.person_source === "historical" ? item.modern_extension_note : null,
+  );
+  drawHangTree(branchPreviewSvg, branchPreview, previewBranch, {
+    nodeWidth: 78,
+    nodeHeight: 162,
+    tagWidth: 50,
+    horizontalGap: 18,
+    verticalGap: 28,
+    columnGap: 32,
+    busOffset: 16,
+  });
+}
+
+async function renderBranchScreen() {
+  if (!state.selectedPerson) {
+    treeColumns.innerHTML = `<div class="notice-box">请先在查询结果里选择一个人物。</div>`;
+    treeColumnsSvg.innerHTML = "";
+    return;
+  }
+  upwardValue.textContent = `${upwardRange.value} 代`;
+  downwardValue.textContent = `${downwardRange.value} 代`;
+  updateBranchControlsVisibility();
+  const ref = selectedRef();
+  const branch = await fetchJson(
+    `/api/v1/persons/${ref}/branch?up=${upwardRange.value}&down=${downwardRange.value}&include_daughters=${toggleDaughters.checked}&include_spouses=${toggleSpouses.checked}`,
+  );
+  state.fullBranch = branch;
+  setTreeNote(
+    branchScreenNote,
+    state.selectedPerson.person_source === "historical" ? branch.focus.modern_extension_note : null,
+  );
+  drawHangTree(treeColumnsSvg, treeColumns, branch, {
+    nodeWidth: 86,
+    nodeHeight: 182,
+    tagWidth: 58,
+    horizontalGap: 24,
+    verticalGap: 34,
+    columnGap: 44,
+    busOffset: 20,
+  });
 }
 
 async function searchPersons() {
@@ -173,6 +450,7 @@ async function searchPersons() {
 
 async function selectPerson(person) {
   state.selectedPerson = person;
+  updateBranchControlsVisibility();
   updateContributeHeading();
   await renderDetail();
   switchScreen("detail");
@@ -220,11 +498,31 @@ async function submitContribution() {
 }
 
 document.querySelectorAll("[data-go-screen]").forEach((button) => {
-  button.addEventListener("click", () => switchScreen(button.dataset.goScreen));
+  button.addEventListener("click", async () => {
+    const target = button.dataset.goScreen;
+    if (target === "branch") {
+      try {
+        await renderBranchScreen();
+      } catch (error) {
+        treeColumns.innerHTML = `<div class="notice-box">支系图加载失败：${escapeHtml(error.message)}</div>`;
+      }
+    }
+    switchScreen(target);
+  });
 });
 
 document.querySelectorAll(".nav-link").forEach((button) => {
-  button.addEventListener("click", () => switchScreen(button.dataset.screenTarget));
+  button.addEventListener("click", async () => {
+    const target = button.dataset.screenTarget;
+    if (target === "branch") {
+      try {
+        await renderBranchScreen();
+      } catch (error) {
+        treeColumns.innerHTML = `<div class="notice-box">支系图加载失败：${escapeHtml(error.message)}</div>`;
+      }
+    }
+    switchScreen(target);
+  });
 });
 
 document.getElementById("search-submit").addEventListener("click", async () => {
@@ -253,6 +551,22 @@ document.getElementById("contribute-submit").addEventListener("click", async () 
   }
 });
 
+[upwardRange, downwardRange, toggleDaughters, toggleSpouses].forEach((control) => {
+  control.addEventListener("input", async () => {
+    upwardValue.textContent = `${upwardRange.value} 代`;
+    downwardValue.textContent = `${downwardRange.value} 代`;
+    if (state.activeScreen !== "branch" || !state.selectedPerson) return;
+    try {
+      await renderBranchScreen();
+    } catch (error) {
+      treeColumns.innerHTML = `<div class="notice-box">支系图加载失败：${escapeHtml(error.message)}</div>`;
+    }
+  });
+});
+
 renderResults();
 setSearchStatus(`当前 API：${apiBase}。默认示例词可用：永昌`);
 updateContributeHeading();
+updateBranchControlsVisibility();
+upwardValue.textContent = `${upwardRange.value} 代`;
+downwardValue.textContent = `${downwardRange.value} 代`;

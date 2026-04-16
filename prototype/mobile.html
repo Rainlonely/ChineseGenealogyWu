@@ -68,15 +68,20 @@
               <div class="card-title-row">
                 <h3>谱系路线缩略图</h3>
               </div>
+              <div class="tree-context-note mobile" id="mobile-route-note" hidden></div>
               <ol class="timeline-list" id="mobile-route-list"></ol>
             </article>
 
             <article class="card">
               <div class="card-title-row">
                 <h3>近支树预览</h3>
-                <button class="text-button" type="button" data-mobile-screen="branch">占位页</button>
+                <button class="text-button" type="button" data-mobile-screen="branch">展开支系图</button>
               </div>
-              <div class="notice-card" id="mobile-branch-preview-note">这块结构还在调整中，当前先保留查询、小传与续修提交。</div>
+              <div class="tree-context-note mobile" id="mobile-detail-branch-note" hidden></div>
+              <div class="mobile-branch-wrap">
+                <svg id="mobile-branch-preview-svg" class="mobile-hanging-svg" aria-hidden="true"></svg>
+                <div id="mobile-branch-preview" class="mobile-hanging-tree preview"></div>
+              </div>
             </article>
 
             <div class="sticky-actions">
@@ -105,19 +110,24 @@
                 <strong id="mobile-downward-value">3 代</strong>
               </label>
               <div class="switch-row">
-                <label class="switch-chip">
+                <label class="switch-chip" id="mobile-toggle-daughters-wrap">
                   <input id="mobile-toggle-daughters" type="checkbox" checked />
                   <span>显示女儿</span>
                 </label>
-                <label class="switch-chip">
+                <label class="switch-chip" id="mobile-toggle-spouses-wrap">
                   <input id="mobile-toggle-spouses" type="checkbox" checked />
                   <span>显示配偶</span>
                 </label>
               </div>
               <p class="helper-copy">只看当前人物附近的几代信息，不加载整本全谱。</p>
             </div>
-
-            <div class="notice-card">支系展开页暂时保留为占位页，后续按新的谱系展示方案再实现。</div>
+            <div class="card">
+              <div class="tree-context-note mobile" id="mobile-branch-screen-note" hidden></div>
+              <div class="mobile-branch-wrap full">
+                <svg id="mobile-tree-columns-svg" class="mobile-hanging-svg" aria-hidden="true"></svg>
+                <div id="mobile-tree-columns" class="mobile-hanging-tree full"></div>
+              </div>
+            </div>
           </section>
 
           <section class="mobile-screen" data-mobile-view="contribute">

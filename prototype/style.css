@@ -381,6 +381,17 @@ input[type="range"] {
   color: var(--text);
 }
 
+.tree-context-note {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(168, 139, 104, 0.24);
+  background: #faf4e8;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 14px;
+}
+
 .hanging-tree {
   display: flex;
   gap: 18px;
@@ -509,6 +520,143 @@ input[type="range"] {
   .result-card {
     grid-template-columns: 1fr;
   }
+}
+
+.branch-preview-wrap,
+.branch-view-wrap {
+  position: relative;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(168, 139, 104, 0.18);
+  background:
+    linear-gradient(180deg, #fcf7ef 0%, #f8f1e5 100%);
+}
+
+.branch-preview-wrap {
+  min-height: 264px;
+}
+
+.branch-view-wrap {
+  min-height: 620px;
+}
+
+.hanging-tree-svg,
+.hanging-tree-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.hanging-tree-svg {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.hanging-tree-canvas {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.preview-tree {
+  min-height: 264px;
+}
+
+.full-tree {
+  min-height: 620px;
+}
+
+.graph-edge-lite {
+  fill: none;
+  stroke: #8d7c63;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.graph-edge-lite.is-focus {
+  stroke: #8d2f23;
+  stroke-width: 2.5;
+}
+
+.tree-generation-tag {
+  position: absolute;
+  width: 56px;
+  padding: 12px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(168, 139, 104, 0.2);
+  background: rgba(255, 252, 247, 0.96);
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  gap: 10px;
+  box-shadow: 0 10px 20px rgba(76, 51, 29, 0.08);
+}
+
+.tree-generation-tag strong,
+.tree-generation-tag span {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.tree-generation-tag strong {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.tree-generation-tag span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tree-node-vertical {
+  position: absolute;
+  border-radius: 8px;
+  border: 1px solid #8d7c63;
+  background: rgba(255, 253, 249, 0.98);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 12px 10px;
+  box-shadow: 0 12px 24px rgba(76, 51, 29, 0.08);
+}
+
+.tree-node-vertical.is-focus {
+  border-color: var(--accent);
+  background: #fff5ed;
+}
+
+.tree-node-vertical.is-modern {
+  border-color: #7d5b2a;
+  background: #fffbf3;
+}
+
+.tree-node-vertical.is-spouse {
+  border-color: #7a8ca8;
+  background: #f5f8ff;
+}
+
+.tree-node-vertical.is-daughter {
+  border-color: #bb7896;
+  background: #fff7fb;
+}
+
+.tree-node-vertical .vertical-name,
+.tree-node-vertical .vertical-meta {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.tree-node-vertical .vertical-name {
+  font-family: "Noto Serif SC", "Songti SC", "STSong", serif;
+  font-size: 20px;
+  line-height: 1.08;
+  color: #201a12;
+}
+
+.tree-node-vertical .vertical-meta {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 @media (max-width: 720px) {

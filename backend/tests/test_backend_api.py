@@ -97,3 +97,29 @@ def test_branch_endpoint_works_without_modern_data(tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     assert "columns" in response.json()
+
+
+def test_historical_branch_stays_historical_only(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    response = client.get(
+        "/api/v1/persons/historical/p_168_005/branch",
+        params={"up": 2, "down": 3, "include_daughters": True, "include_spouses": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["focus"]["person_source"] == "historical"
+    assert isinstance(body["focus"]["has_modern_extension"], bool)
+    for column in body["columns"]:
+        for node in column["nodes"]:
+            assert node["person_source"] == "historical"
+            assert node["node_type"] != "spouse"
+
+
+def test_historical_route_stays_historical_only(tmp_path: Path) -> None:
+    client = build_client(tmp_path)
+    response = client.get("/api/v1/persons/historical/p_168_005/route")
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body["has_modern_extension"], bool)
+    for item in body["items"]:
+        assert item["person_source"] == "historical"

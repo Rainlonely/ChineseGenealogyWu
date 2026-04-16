@@ -443,6 +443,17 @@ input[type="range"] {
   background: #fff;
 }
 
+.tree-context-note.mobile {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 199, 176, 0.78);
+  background: #f9f3e7;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
 .lane-card {
   padding: 0;
   display: grid;
@@ -498,4 +509,132 @@ input[type="range"] {
     border-radius: 0;
     border: 0;
   }
+}
+
+.mobile-branch-wrap {
+  position: relative;
+  overflow: auto;
+  min-height: 230px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 199, 176, 0.78);
+  background: linear-gradient(180deg, #fdf7ef 0%, #f6eddc 100%);
+}
+
+.mobile-branch-wrap.full {
+  min-height: 560px;
+}
+
+.mobile-hanging-svg,
+.mobile-hanging-tree {
+  position: absolute;
+  inset: 0;
+}
+
+.mobile-hanging-svg {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.mobile-hanging-tree {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.mobile-hanging-tree.preview {
+  min-height: 230px;
+}
+
+.mobile-hanging-tree.full {
+  min-height: 560px;
+}
+
+.mobile-graph-edge-lite {
+  fill: none;
+  stroke: #8d7c63;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mobile-graph-edge-lite.is-focus {
+  stroke: var(--accent);
+  stroke-width: 2.3;
+}
+
+.mobile-generation-tag {
+  position: absolute;
+  width: 42px;
+  padding: 9px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 199, 176, 0.78);
+  background: rgba(255, 252, 247, 0.96);
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  gap: 8px;
+  box-shadow: 0 8px 18px rgba(79, 56, 31, 0.08);
+}
+
+.mobile-generation-tag strong,
+.mobile-generation-tag span,
+.mobile-tree-node-vertical .vertical-name,
+.mobile-tree-node-vertical .vertical-meta {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.mobile-generation-tag strong {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.mobile-generation-tag span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mobile-tree-node-vertical {
+  position: absolute;
+  border-radius: 8px;
+  border: 1px solid #8d7c63;
+  background: rgba(255, 253, 248, 0.98);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  box-shadow: 0 10px 18px rgba(79, 56, 31, 0.08);
+}
+
+.mobile-tree-node-vertical.is-focus {
+  border-color: var(--accent);
+  background: #fff4ed;
+}
+
+.mobile-tree-node-vertical.is-modern {
+  border-color: #7d5b2a;
+  background: #fffaf1;
+}
+
+.mobile-tree-node-vertical.is-spouse {
+  border-color: #7a8ca8;
+  background: #f5f8ff;
+}
+
+.mobile-tree-node-vertical.is-daughter {
+  border-color: #bb7896;
+  background: #fff7fb;
+}
+
+.mobile-tree-node-vertical .vertical-name {
+  font-family: "Noto Serif SC", "Songti SC", "STSong", serif;
+  font-size: 17px;
+  line-height: 1.06;
+  color: var(--text);
+}
+
+.mobile-tree-node-vertical .vertical-meta {
+  font-size: 11px;
+  color: var(--muted);
 }

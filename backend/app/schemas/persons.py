@@ -40,6 +40,7 @@ class PersonDetail(BaseModel):
     source_label: str
     has_biography: bool
     has_modern_extension: bool
+    modern_extension_note: Optional[str] = None
     biography_summary: Optional[str] = None
     actions: ActionHints
 
@@ -68,6 +69,8 @@ class RouteItem(BaseModel):
 
 class RouteResponse(BaseModel):
     items: List[RouteItem]
+    has_modern_extension: bool = False
+    modern_extension_note: Optional[str] = None
 
 
 class BranchNode(BaseModel):
@@ -90,6 +93,8 @@ class BranchFocus(BaseModel):
     person_source: PersonSource
     name: str
     generation_label: str
+    has_modern_extension: bool = False
+    modern_extension_note: Optional[str] = None
 
 
 class BranchResponse(BaseModel):

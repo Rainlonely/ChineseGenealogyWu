@@ -206,11 +206,11 @@ class ModernRepository:
     def get_spouses(self, person_refs: List[str], person_source: str) -> List[Dict[str, Any]]:
         if not person_refs:
             return []
-        placeholders = ",".join("?" for _ in person_refs)
+        anchor_ref = person_refs[0]
         conn = connect(self.db_path)
         try:
             rows = conn.execute(
-                f"""
+                """
                 SELECT
                   mr.id,
                   mr.from_person_ref,
@@ -219,24 +219,24 @@ class ModernRepository:
                   mr.to_person_source,
                   mr.relation_type,
                   CASE
-                    WHEN mr.from_person_ref IN ({placeholders}) AND mr.to_person_source = 'modern' THEN mp_to.display_name
-                    WHEN mr.to_person_ref IN ({placeholders}) AND mr.from_person_source = 'modern' THEN mp_from.display_name
+                    WHEN mr.from_person_ref = ? AND mr.to_person_source = 'modern' THEN mp_to.display_name
+                    WHEN mr.to_person_ref = ? AND mr.from_person_source = 'modern' THEN mp_from.display_name
                     ELSE NULL
                   END AS spouse_name,
                   CASE
-                    WHEN mr.from_person_ref IN ({placeholders}) THEN mr.from_person_ref
+                    WHEN mr.from_person_ref = ? THEN mr.from_person_ref
                     ELSE mr.to_person_ref
                   END AS anchor_person_ref,
                   CASE
-                    WHEN mr.from_person_ref IN ({placeholders}) THEN mr.from_person_source
+                    WHEN mr.from_person_ref = ? THEN mr.from_person_source
                     ELSE mr.to_person_source
                   END AS anchor_person_source,
                   CASE
-                    WHEN mr.from_person_ref IN ({placeholders}) THEN mr.to_person_ref
+                    WHEN mr.from_person_ref = ? THEN mr.to_person_ref
                     ELSE mr.from_person_ref
                   END AS spouse_person_ref,
                   CASE
-                    WHEN mr.from_person_ref IN ({placeholders}) THEN mr.to_person_source
+                    WHEN mr.from_person_ref = ? THEN mr.to_person_source
                     ELSE mr.from_person_source
                   END AS spouse_person_source
                 FROM modern_relationships AS mr
@@ -246,22 +246,23 @@ class ModernRepository:
                   ON mp_from.id = mr.from_person_ref
                 WHERE mr.relation_type = 'spouse'
                   AND (
-                    (mr.from_person_source = ? AND mr.from_person_ref IN ({placeholders}))
+                    (mr.from_person_source = ? AND mr.from_person_ref = ?)
                     OR
-                    (mr.to_person_source = ? AND mr.to_person_ref IN ({placeholders}))
+                    (mr.to_person_source = ? AND mr.to_person_ref = ?)
                   )
                 ORDER BY mr.id
                 """,
                 (
-                    *person_refs,
-                    *person_refs,
-                    *person_refs,
-                    *person_refs,
-                    *person_refs,
+                    anchor_ref,
+                    anchor_ref,
+                    anchor_ref,
+                    anchor_ref,
+                    anchor_ref,
+                    anchor_ref,
                     person_source,
-                    *person_refs,
+                    anchor_ref,
                     person_source,
-                    *person_refs,
+                    anchor_ref,
                 ),
             ).fetchall()
             return [dict(row) for row in rows if row["spouse_name"]]

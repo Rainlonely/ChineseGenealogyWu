@@ -13,6 +13,12 @@ class PersonService:
         self.modern_repo = ModernRepository(db_path)
 
     @staticmethod
+    def _modern_extension_note(has_modern_extension: bool) -> Optional[str]:
+        if not has_modern_extension:
+            return None
+        return "此支已有现代续修记录"
+
+    @staticmethod
     def _generation_label(generation: Optional[int]) -> str:
         return f"第{generation}世" if generation else "现代续修"
 
@@ -72,6 +78,7 @@ class PersonService:
                     "source_label": "古籍人物",
                     "has_biography": bool(row["has_biography"]),
                     "has_modern_extension": bool(row["has_modern_extension"]),
+                    "modern_extension_note": self._modern_extension_note(bool(row["has_modern_extension"])),
                     "biography_summary": (biography or {}).get("source_text_linear") or (biography or {}).get("source_text_raw"),
                     "actions": {
                         "can_view_biography": bool(row["has_biography"]),
@@ -94,6 +101,7 @@ class PersonService:
                 "source_label": "现代续修",
                 "has_biography": bool(row.get("bio")),
                 "has_modern_extension": bool(row["has_modern_extension"]),
+                "modern_extension_note": None,
                 "biography_summary": row.get("bio"),
                 "actions": {
                     "can_view_biography": bool(row.get("bio")),
@@ -161,18 +169,11 @@ class PersonService:
                     "note": "当前查看人物",
                 }
             )
-            attached = self.modern_repo.get_attached_roots(person_ref)
-            if attached:
-                items.append(
-                    {
-                        "generation": None,
-                        "name": attached[0]["display_name"],
-                        "person_ref": attached[0]["id"],
-                        "person_source": "modern",
-                        "note": "现代续修已延伸",
-                    }
-                )
-            return {"items": items[-8:]}
+            return {
+                "items": items[-8:],
+                "has_modern_extension": bool(person["has_modern_extension"]),
+                "modern_extension_note": self._modern_extension_note(bool(person["has_modern_extension"])),
+            }
 
         person = self.modern_repo.get_person(person_ref)
         if not person:
@@ -201,7 +202,11 @@ class PersonService:
                     "note": "现代续修人物",
                 }
             )
-        return {"items": items[-8:]}
+        return {
+            "items": items[-8:],
+            "has_modern_extension": bool(person["has_modern_extension"]),
+            "modern_extension_note": None,
+        }
 
     def get_branch(
         self,
@@ -248,19 +253,6 @@ class PersonService:
                     "relation_type": "self",
                 }
             ]
-            if include_spouses:
-                spouses = self.modern_repo.get_spouses([person_ref], "historical")
-                for spouse in spouses:
-                    focus_nodes.append(
-                        {
-                            "person_ref": spouse["spouse_person_ref"],
-                            "person_source": spouse["spouse_person_source"],
-                            "name": spouse["spouse_name"],
-                            "relation_to_focus": "配偶",
-                            "node_type": "spouse",
-                            "relation_type": spouse["relation_type"],
-                        }
-                    )
             columns.append(
                 {
                     "label": "当前人物",
@@ -282,21 +274,6 @@ class PersonService:
                     for row in descendants
                     if row["level"] == level
                 ]
-                if level == 1:
-                    modern_roots = self.modern_repo.get_attached_roots(person_ref)
-                    for root in modern_roots:
-                        relation_type = "father_son"
-                        if include_daughters and root["display_name"]:
-                            nodes.append(
-                                {
-                                    "person_ref": root["id"],
-                                    "person_source": "modern",
-                                    "name": root["display_name"],
-                                    "relation_to_focus": "现代续修",
-                                    "node_type": "descendant",
-                                    "relation_type": relation_type,
-                                }
-                            )
                 if not nodes:
                     continue
                 columns.append(
@@ -306,43 +283,14 @@ class PersonService:
                         "nodes": nodes,
                     }
                 )
-            if down >= 2:
-                modern_roots = [item["id"] for item in self.modern_repo.get_attached_roots(person_ref)]
-                modern_descendants = self.modern_repo.get_descendants_from_roots(modern_roots, down)
-                for level in range(1, down + 1):
-                    matching = []
-                    for row in modern_descendants:
-                        if row["level"] != level:
-                            continue
-                        if not include_daughters and "daughter" in row["relation_type"]:
-                            continue
-                        matching.append(
-                            {
-                                "person_ref": row["person_id"],
-                                "person_source": "modern",
-                                "name": row["display_name"],
-                                "relation_to_focus": f"现代下 {level} 代",
-                                "node_type": "descendant",
-                                "relation_type": row["relation_type"],
-                            }
-                        )
-                    if not matching:
-                        continue
-                    label = f"下 {level} 代"
-                    for column in columns:
-                        if column["label"] == label:
-                            column["nodes"].extend(matching)
-                            break
-                        else:
-                            continue
-                    else:
-                        columns.append({"label": label, "generation": None, "nodes": matching})
             return {
                 "focus": {
                     "person_ref": person["id"],
                     "person_source": "historical",
                     "name": person["name"],
                     "generation_label": self._generation_label(person["generation"]),
+                    "has_modern_extension": bool(person["has_modern_extension"]),
+                    "modern_extension_note": self._modern_extension_note(bool(person["has_modern_extension"])),
                 },
                 "columns": columns,
             }
@@ -421,6 +369,8 @@ class PersonService:
                 "person_source": "modern",
                 "name": person["display_name"],
                 "generation_label": "现代续修",
+                "has_modern_extension": bool(person["has_modern_extension"]),
+                "modern_extension_note": None,
             },
             "columns": columns,
         }

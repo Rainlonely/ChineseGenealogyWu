@@ -74,16 +74,19 @@
               <div class="panel-title-row">
                 <h3>谱系路线缩略图</h3>
               </div>
+              <div class="tree-context-note" id="route-note" hidden></div>
               <ol class="route-list" id="route-list"></ol>
             </article>
 
             <article class="panel">
               <div class="panel-title-row">
                 <h3>近支树预览</h3>
-                <button class="ghost-action small" data-go-screen="branch">查看占位页</button>
+                <button class="ghost-action small" data-go-screen="branch">展开支系图</button>
               </div>
-              <div class="notice-box" id="branch-preview-note">
-                这块结构还在调整中，当前先保留人物查询、小传与续修提交流程。
+              <div class="tree-context-note" id="detail-branch-note" hidden></div>
+              <div class="branch-preview-wrap">
+                <svg id="branch-preview-svg" class="hanging-tree-svg" aria-hidden="true"></svg>
+                <div id="branch-preview" class="hanging-tree-canvas preview-tree"></div>
               </div>
             </article>
           </div>
@@ -112,19 +115,20 @@
               <input id="downward-range" type="range" min="1" max="5" value="3" />
               <span class="range-value" id="downward-value">3 代</span>
             </div>
-            <label class="toggle">
+            <label class="toggle" id="toggle-daughters-wrap">
               <input id="toggle-daughters" type="checkbox" checked />
               <span>显示女儿</span>
             </label>
-            <label class="toggle">
+            <label class="toggle" id="toggle-spouses-wrap">
               <input id="toggle-spouses" type="checkbox" checked />
               <span>显示配偶</span>
             </label>
           </div>
-
-            <div class="panel">
-            <div class="notice-box">
-              支系展开页暂时保留为占位页，后续按新的谱系展示方案再实现。
+          <div class="panel">
+            <div class="tree-context-note" id="branch-screen-note" hidden></div>
+            <div class="branch-view-wrap">
+              <svg id="tree-columns-svg" class="hanging-tree-svg" aria-hidden="true"></svg>
+              <div id="tree-columns" class="hanging-tree-canvas full-tree"></div>
             </div>
           </div>
         </section>
