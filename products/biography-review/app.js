@@ -184,10 +184,6 @@ async function loadDisplayedOcr() {
   currentOcrMap = new Map(entries);
 }
 
-function isDeleted(pageNo, index) {
-  return new Set(ensurePageState(pageNo).deleted_ocr_indexes || []).has(index);
-}
-
 function selectedBlockEntries() {
   const pageOrder = displayedPages().map((page) => Number(page.page));
   const pageRank = new Map(pageOrder.map((pageNo, idx) => [pageNo, idx]));
@@ -241,16 +237,6 @@ function setActivePerson(personId, label) {
   renderViewers();
 }
 
-function toggleDeleted(pageNo, index) {
-  const pageState = ensurePageState(pageNo);
-  const next = new Set(pageState.deleted_ocr_indexes || []);
-  if (next.has(index)) next.delete(index);
-  else next.add(index);
-  pageState.deleted_ocr_indexes = [...next].sort((a, b) => a - b);
-  selectedBlockKeys.delete(blockKey(pageNo, index));
-  scheduleAutoSave();
-}
-
 function renderViewers() {
   const container = document.getElementById("viewerMulti");
   const pages = displayedPages();
@@ -259,7 +245,6 @@ function renderViewers() {
 
   pages.forEach((page) => {
     const ocr = currentOcrMap.get(String(page.page));
-    const pageDeleted = new Set(ensurePageState(page.page).deleted_ocr_indexes || []);
 
     const card = document.createElement("div");
     card.className = "viewer-page";
@@ -303,14 +288,12 @@ function renderViewers() {
         const box = document.createElement("div");
         box.className = "ocr-box";
         if (selectedBlockKeys.has(key)) box.classList.add("selected");
-        if (pageDeleted.has(item.index)) box.classList.add("deleted");
         box.style.left = `${x1}px`;
         box.style.top = `${y1}px`;
         box.style.width = `${Math.max(24, x2 - x1)}px`;
         box.style.height = `${Math.max(24, y2 - y1)}px`;
         box.onclick = (event) => {
           event.stopPropagation();
-          if (pageDeleted.has(item.index)) return;
           if (!activePersonId) {
             alert("先点击顶部人物卡片，把它设为当前人物。");
             return;
@@ -325,18 +308,6 @@ function renderViewers() {
         label.className = "ocr-label";
         label.textContent = `${item.index} ${item.text}`;
         box.appendChild(label);
-
-        const del = document.createElement("button");
-        del.className = "ocr-delete";
-        del.textContent = pageDeleted.has(item.index) ? "↺" : "×";
-        del.onclick = (event) => {
-          event.stopPropagation();
-          toggleDeleted(page.page, item.index);
-          renderMatches();
-          renderDraftPanel();
-          renderViewers();
-        };
-        box.appendChild(del);
         overlay.appendChild(box);
       });
     };
@@ -418,7 +389,6 @@ function renderManualPicker() {
 
 function renderMatches() {
   const pageState = currentPageState();
-  const deleted = new Set(pageState.deleted_ocr_indexes || []);
   const container = document.getElementById("matches");
   container.innerHTML = "";
 
@@ -435,7 +405,6 @@ function renderMatches() {
   ];
 
   renderedMatches.forEach((item) => {
-    if (item.ocr_index !== null && deleted.has(item.ocr_index)) return;
     const chosenPersonId = item._manual
       ? pageState.manual_matches[item._manualIndex]?.selected_person_id
       : pageState.title_assignments?.[String(item.ocr_index)]?.selected_person_id ?? item.recommended_person_id;

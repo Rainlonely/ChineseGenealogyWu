@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/review/" />
     <title>人物小传校对</title>
-    <link rel="stylesheet" href="./styles.css?v=20260420c" />
+    <link rel="stylesheet" href="./styles.css?v=20260420e" />
   </head>
   <body>
     <div class="app" id="appRoot">
@@ -35,7 +35,7 @@
               <option value="next">当前页 + 下一页</option>
               <option value="prev">上一页 + 当前页</option>
             </select>
-            <div class="viewer-help">点击框加入拼接；点 × 标记噪音删除</div>
+            <div class="viewer-help">点击框加入拼接</div>
             <div id="saveStatus">自动保存</div>
           </div>
         </header>
@@ -78,20 +78,20 @@
             </div>
           </section>
 
+          <section class="panel bottom-records">
+            <div class="detail-block">
+              <h2>已写入记录</h2>
+              <div id="biographyList"></div>
+            </div>
+          </section>
+
           <section class="panel viewer-panel">
             <div class="viewer-multi" id="viewerMulti"></div>
           </section>
         </div>
-
-        <section class="panel bottom-records">
-          <div class="detail-block">
-            <h2>已写入记录</h2>
-            <div id="biographyList"></div>
-          </div>
-        </section>
       </main>
     </div>
 
-    <script src="./app.js?v=20260420c"></script>
+    <script src="./app.js?v=20260420e"></script>
   </body>
 </html>
