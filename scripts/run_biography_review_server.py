@@ -16,6 +16,7 @@ from import_genealogy_to_sqlite import DEFAULT_DB_PATH
 
 ROOT = Path(__file__).resolve().parents[1]
 SQLITE_DB_PATH = DEFAULT_DB_PATH
+BIO_REVIEW_UI_DIR = ROOT / "products" / "biography-review"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -311,6 +312,60 @@ def build_initial_state(bundle: dict) -> dict:
     }
 
 
+def build_state_from_sqlite(bundle: dict, project_id: str | None = None) -> dict:
+    state = build_initial_state(bundle)
+    effective_project_id = project_id or bundle.get("project_id")
+    if not effective_project_id:
+        return state
+
+    conn = sqlite3.connect(str(SQLITE_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT person_id, source_page_no, source_title_text, source_text_linear, source_text_baihua, notes_json
+            FROM person_biographies
+            WHERE project_id = ? AND match_status = 'reviewed_manual'
+            ORDER BY source_page_no, id
+            """,
+            (effective_project_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    for row in rows:
+        page_no = row["source_page_no"]
+        if page_no is None:
+            continue
+        page_key = str(int(page_no))
+        page_state = state["pages"].get(page_key)
+        if page_state is None:
+            continue
+        notes = {}
+        if row["notes_json"]:
+            try:
+                notes = json.loads(row["notes_json"])
+            except json.JSONDecodeError:
+                notes = {}
+        selected_block_keys = notes.get("selected_block_keys") if isinstance(notes.get("selected_block_keys"), list) else []
+        selected_ocr_indexes = (
+            notes.get("selected_ocr_indexes") if isinstance(notes.get("selected_ocr_indexes"), list) else []
+        )
+        source_pages = notes.get("source_pages") if isinstance(notes.get("source_pages"), list) else [int(page_no)]
+        page_state["biographies"].append(
+            {
+                "person_id": row["person_id"],
+                "person_name": row["source_title_text"] or row["person_id"],
+                "selected_block_keys": selected_block_keys,
+                "selected_ocr_indexes": selected_ocr_indexes,
+                "source_pages": source_pages,
+                "linear_text": row["source_text_linear"] or "",
+                "baihua_text": row["source_text_baihua"] or "",
+            }
+        )
+    return state
+
+
 class BiographyReviewHandler(SimpleHTTPRequestHandler):
     root_dir: Path
     ui_dir: Path
@@ -333,20 +388,6 @@ class BiographyReviewHandler(SimpleHTTPRequestHandler):
         if project_dir is None:
             raise KeyError(f"Unknown biography project: {effective_project_id}")
         return project_dir
-
-    @classmethod
-    def ensure_state(cls, project_id: str | None = None) -> Path:
-        project_dir = cls.resolve_project_dir(project_id)
-        review_dir = project_dir / "review"
-        bundle_path = review_dir / "review_data.json"
-        state_path = review_dir / "review_state.json"
-        bundle = load_json(bundle_path, {})
-        if not state_path.exists():
-            state_path.write_text(
-                json.dumps(build_initial_state(bundle), ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-        return state_path
 
     @classmethod
     def project_meta_list(cls) -> list[dict]:
@@ -412,9 +453,8 @@ class BiographyReviewHandler(SimpleHTTPRequestHandler):
             except KeyError:
                 self._send_json({"error": "unknown_project"}, status=404)
                 return
-            state_path = self.ensure_state(project_id)
             bundle = self.bundle_for_client(project_id)
-            state = load_json(state_path, {})
+            state = build_state_from_sqlite(bundle, project_id=project_id)
             self._send_json(
                 {
                     "bundle": bundle,
@@ -444,12 +484,10 @@ class BiographyReviewHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": "unknown_project"}, status=404)
             return
         bundle_path = project_dir / "review" / "review_data.json"
-        state_path = self.ensure_state(effective_project_id)
         bundle = load_json(bundle_path, {})
         normalized = normalize_state(bundle, payload, project_dir)
-        state_path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         sync_state_to_sqlite(bundle, normalized, project_dir)
-        self._send_json({"ok": True})
+        self._send_json({"ok": True, "mode": "db_only"})
 
 
 def main() -> int:
@@ -466,13 +504,12 @@ def main() -> int:
         raise SystemExit("No biography projects with review_data.json found.")
     default_project_id = sorted(project_dirs.keys())[0]
     BiographyReviewHandler.root_dir = ROOT
-    BiographyReviewHandler.ui_dir = ROOT / default_project_id / "review"
+    BiographyReviewHandler.ui_dir = BIO_REVIEW_UI_DIR if BIO_REVIEW_UI_DIR.exists() else (ROOT / default_project_id / "review")
     BiographyReviewHandler.default_project_id = default_project_id
     BiographyReviewHandler.project_dirs = project_dirs
-    for project_id in project_dirs:
-        BiographyReviewHandler.ensure_state(project_id)
     server = ThreadingHTTPServer((args.host, args.port), BiographyReviewHandler)
     print(f"Serving biography review at http://{args.host}:{args.port}/review/")
+    print(f"Serving biography UI from: {BiographyReviewHandler.ui_dir}")
     server.serve_forever()
     return 0
 

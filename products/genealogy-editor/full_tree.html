@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>1-112世完整树</title>
+    <link rel="stylesheet" href="/editor/styles.css" />
+  </head>
+  <body class="full-tree-body">
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 id="fullTreeTitle">1-112世完整树</h1>
+          <p id="fullTreeStatus">正在读取数据库中的完整树...</p>
+        </div>
+        <div class="topbar-actions">
+          <a class="summary-link-button" href="/">返回编辑器</a>
+          <button id="fullTreeZoomOutBtn" type="button">图缩小</button>
+          <button id="fullTreeZoomResetBtn" type="button">图重置</button>
+          <button id="fullTreeZoomInBtn" type="button">图放大</button>
+          <button id="fullTreeFullscreenBtn" type="button">全屏查看</button>
+        </div>
+      </header>
+      <section class="workspace-summary-panel" aria-label="完整树说明">
+        <div class="summary-heading">
+          <strong>数据库只读树图</strong>
+          <span id="fullTreeSummary">默认展示第1世到第112世的完整结构，点击节点可高亮整支后代。</span>
+        </div>
+      </section>
+      <main class="workspace-layout full-tree-layout">
+        <section class="panel graph-panel full-tree-panel">
+          <div class="section-header graph-header">
+            <div>
+              <h2>完整树图</h2>
+              <p>数据直接来自 SQLite，不进入编辑流程。</p>
+            </div>
+          </div>
+          <div id="fullTreeWrap" class="graph-wrap full-tree-wrap">
+            <div id="fullTreeToolbar" class="fullscreen-graph-toolbar full-tree-toolbar">
+              <span id="fullTreeHint" class="fullscreen-graph-hint">点击节点可高亮整支后代</span>
+            </div>
+            <svg id="fullTreeSvg"></svg>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div id="personContextMenu" class="person-context-menu" hidden></div>
+    <script src="/editor/full_tree.js"></script>
+  </body>
+</html>

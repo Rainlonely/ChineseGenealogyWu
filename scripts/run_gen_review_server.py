@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from import_genealogy_to_sqlite import DEFAULT_DB_PATH, sync_group_payload_to_sqlite, sync_workspace_to_sqlite
 from run_biography_review_server import (
-    build_initial_state as build_bio_initial_state,
+    build_state_from_sqlite as build_bio_state_from_sqlite,
     load_json as load_bio_json,
     normalize_state as normalize_bio_state,
     sync_state_to_sqlite as sync_bio_state_to_sqlite,
@@ -42,6 +42,8 @@ BIO_DEFAULT_PROJECT_ID: str | None = None
 SQLITE_MIRROR_MIN_INTERVAL_SECONDS = 120
 LAST_SQLITE_MIRROR_AT = 0.0
 COMPLETE_TREE_MAX_GENERATION = 112
+GEN_EDITOR_UI_DIR = ROOT / "products" / "genealogy-editor"
+BIO_REVIEW_UI_DIR = ROOT / "products" / "biography-review"
 
 
 def parse_group_range(group_id: str | None) -> tuple[int | None, int | None]:
@@ -116,6 +118,133 @@ def ensure_bridge_payload(left_group_id: str, right_group_id: str) -> dict:
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return payload
+
+
+def bridge_scope_ref(left_group_id: str, right_group_id: str) -> str:
+    return f"{MERGE_WORKSPACE_PREFIX}{left_group_id}__{right_group_id}"
+
+
+def upsert_bridge_edges_to_sqlite(left_group_id: str, right_group_id: str, edges: list[dict]) -> int:
+    scope_ref = bridge_scope_ref(left_group_id, right_group_id)
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    inserted = 0
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(
+            """
+            DELETE FROM relationships
+            WHERE scope = 'group_bridge'
+              AND EXISTS (
+                SELECT 1
+                FROM persons AS p1, persons AS p2
+                WHERE p1.id = relationships.parent_person_id
+                  AND p2.id = relationships.child_person_id
+                  AND (
+                    (p1.group_id = ? AND p2.group_id = ?)
+                    OR (p1.group_id = ? AND p2.group_id = ?)
+                  )
+              )
+            """,
+            (left_group_id, right_group_id, right_group_id, left_group_id),
+        )
+        for edge in edges:
+            parent_group = str(edge.get("from_source_group_id") or "")
+            child_group = str(edge.get("to_source_group_id") or "")
+            parent_source = str(edge.get("from_person_id") or "")
+            child_source = str(edge.get("to_person_id") or "")
+            if not parent_group or not child_group or not parent_source or not child_source:
+                continue
+            parent_id = f"{parent_group}::{parent_source}"
+            child_id = f"{child_group}::{child_source}"
+            conn.execute(
+                """
+                INSERT INTO relationships (
+                  scope, scope_ref, parent_person_id, child_person_id, relation_type,
+                  birth_order_under_parent, confidence, page_sources_json, notes_json,
+                  is_verified, verified_at, remark
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(scope, scope_ref, parent_person_id, child_person_id, relation_type) DO UPDATE SET
+                  birth_order_under_parent = excluded.birth_order_under_parent,
+                  confidence = excluded.confidence,
+                  page_sources_json = excluded.page_sources_json,
+                  notes_json = excluded.notes_json,
+                  is_verified = excluded.is_verified,
+                  verified_at = excluded.verified_at,
+                  remark = excluded.remark,
+                  updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    "group_bridge",
+                    scope_ref,
+                    parent_id,
+                    child_id,
+                    edge.get("relation") or "father_child",
+                    edge.get("birth_order_under_parent"),
+                    edge.get("confidence"),
+                    json.dumps(edge.get("page_sources") or [], ensure_ascii=False),
+                    json.dumps(edge.get("notes") or [], ensure_ascii=False),
+                    1 if edge.get("is_verified") else 0,
+                    edge.get("verified_at"),
+                    edge.get("remark"),
+                ),
+            )
+            inserted += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return inserted
+
+
+def load_bridge_edges_from_sqlite(left_group_id: str, right_group_id: str) -> list[dict]:
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+              p1.group_id AS parent_group_id,
+              p1.source_person_id AS parent_source_person_id,
+              p2.group_id AS child_group_id,
+              p2.source_person_id AS child_source_person_id,
+              r.relation_type, r.birth_order_under_parent, r.confidence,
+              r.page_sources_json, r.notes_json, r.is_verified, r.verified_at, r.remark
+            FROM relationships AS r
+            JOIN persons AS p1
+              ON p1.id = r.parent_person_id
+            JOIN persons AS p2
+              ON p2.id = r.child_person_id
+            WHERE r.scope = 'group_bridge'
+              AND (
+                (p1.group_id = ? AND p2.group_id = ?)
+                OR (p1.group_id = ? AND p2.group_id = ?)
+              )
+            ORDER BY p1.source_person_id, p2.source_person_id
+            """,
+            (left_group_id, right_group_id, right_group_id, left_group_id),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    edges: list[dict] = []
+    for row in rows:
+        edges.append(
+            {
+                "from_person_id": row["parent_source_person_id"],
+                "to_person_id": row["child_source_person_id"],
+                "relation": row["relation_type"] or "father_child",
+                "birth_order_under_parent": row["birth_order_under_parent"],
+                "confidence": row["confidence"],
+                "page_sources": json.loads(row["page_sources_json"] or "[]"),
+                "notes": json.loads(row["notes_json"] or "[]"),
+                "is_verified": bool(row["is_verified"]),
+                "verified_at": row["verified_at"],
+                "remark": row["remark"],
+                "from_source_group_id": row["parent_group_id"],
+                "to_source_group_id": row["child_group_id"],
+            }
+        )
+    return edges
 
 
 def incoming_children(edges: list[dict]) -> set[str]:
@@ -382,12 +511,26 @@ def build_merge_workspace_payload(source_group_ids: list[str]) -> dict:
             **group_page_remap.get(left_group_id, {}),
             **group_page_remap.get(right_group_id, {}),
         }
-        bridge = ensure_bridge_payload(left_group_id, right_group_id)
-        for edge in bridge.get("edges", []):
+        db_bridge_edges = load_bridge_edges_from_sqlite(left_group_id, right_group_id)
+        if db_bridge_edges:
+            candidate_edges = db_bridge_edges
+        else:
+            candidate_edges = ensure_bridge_payload(left_group_id, right_group_id).get("edges", [])
+        for edge in candidate_edges:
             from_raw = str(edge.get("from_person_id") or "")
             to_raw = str(edge.get("to_person_id") or "")
-            from_id = person_id_map.get((left_group_id, from_raw)) or person_id_map.get((right_group_id, from_raw))
-            to_id = person_id_map.get((left_group_id, to_raw)) or person_id_map.get((right_group_id, to_raw))
+            from_group = str(edge.get("from_source_group_id") or "")
+            to_group = str(edge.get("to_source_group_id") or "")
+            from_id = None
+            to_id = None
+            if from_group:
+                from_id = person_id_map.get((from_group, from_raw))
+            if to_group:
+                to_id = person_id_map.get((to_group, to_raw))
+            if not from_id:
+                from_id = person_id_map.get((left_group_id, from_raw)) or person_id_map.get((right_group_id, from_raw))
+            if not to_id:
+                to_id = person_id_map.get((left_group_id, to_raw)) or person_id_map.get((right_group_id, to_raw))
             if not from_id or not to_id:
                 continue
             bridge_edges.append(
@@ -740,10 +883,10 @@ def build_person_detail_payload(person_id: str) -> dict:
             "id": row["id"],
             "source_person_id": row["source_person_id"],
             "group_id": row["group_id"],
-            "name": person.get("name") or row["name"],
+            "name": row["name"] or person.get("name"),
             "canonical_name": row["canonical_name"],
-            "generation": person.get("generation") or row["generation"],
-            "root_order": person.get("root_order") or row["root_order"],
+            "generation": row["generation"] or person.get("generation"),
+            "root_order": row["root_order"] or person.get("root_order"),
             "primary_page_no": row["primary_page_no"],
             "primary_page_image_path": image_url_for_path(row["primary_page_image_path"]),
             "glyph_image": image_url_for_path(row["glyph_asset_path"]) or person.get("glyph_image") or "",
@@ -789,22 +932,34 @@ def update_person_name_payload(person_id: str, new_name: str) -> dict:
     if not row:
         return {"ok": False, "error": f"未找到人物 {person_id}"}
 
-    payload, person, _ = find_person_payload(row["group_id"], row["source_person_id"])
-    person["name"] = cleaned_name
-    if isinstance(person.get("text_ref"), dict):
-        person["text_ref"]["text"] = cleaned_name
-    if isinstance(person.get("text_refs"), list):
-        for ref in person["text_refs"]:
-            if isinstance(ref, dict):
-                ref["text"] = cleaned_name
-    notes = [str(item) for item in person.get("notes", [])]
-    if "人工更正姓名" not in notes:
-        notes.append("人工更正姓名")
-    person["notes"] = notes
-    path = save_group_payload(row["group_id"], payload)
-    mirror = sync_sqlite_mirror()
+    notes: list[str] = []
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        existing = conn.execute(
+            "SELECT notes_json FROM persons WHERE id = ?",
+            (person_id,),
+        ).fetchone()
+        if existing and existing["notes_json"]:
+            try:
+                notes = [str(item) for item in json.loads(existing["notes_json"] or "[]")]
+            except json.JSONDecodeError:
+                notes = []
+        if "人工更正姓名" not in notes:
+            notes.append("人工更正姓名")
+        conn.execute(
+            """
+            UPDATE persons
+            SET name = ?, canonical_name = ?, notes_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (cleaned_name, cleaned_name, json.dumps(notes, ensure_ascii=False), person_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
     detail = build_person_detail_payload(row["id"])
-    return {"ok": True, "path": str(path), "sqlite_mirror": mirror, "detail": detail}
+    return {"ok": True, "mode": "db_direct", "detail": detail}
 
 
 def crop_person_glyph(person_id: str) -> dict:
@@ -1210,20 +1365,6 @@ def resolve_bio_project_dir(project_id: str | None) -> Path:
     return project_dir
 
 
-def ensure_bio_state(project_id: str | None = None) -> Path:
-    project_dir = resolve_bio_project_dir(project_id)
-    review_dir = project_dir / "review"
-    bundle_path = review_dir / "review_data.json"
-    state_path = review_dir / "review_state.json"
-    bundle = load_bio_json(bundle_path, {})
-    if not state_path.exists():
-        state_path.write_text(
-            json.dumps(build_bio_initial_state(bundle), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-    return state_path
-
-
 def bio_project_meta_list() -> list[dict]:
     rows = []
     for project_id, project_dir in sorted(BIO_PROJECT_DIRS.items()):
@@ -1285,6 +1426,13 @@ def bio_bundle_for_client(project_id: str) -> dict:
 
 
 class ReviewHandler(SimpleHTTPRequestHandler):
+    @staticmethod
+    def resolve_bio_ui_dir() -> Path:
+        if BIO_REVIEW_UI_DIR.exists():
+            return BIO_REVIEW_UI_DIR
+        default_project_dir = resolve_bio_project_dir(None)
+        return default_project_dir / "review"
+
     def address_string(self) -> str:
         return self.client_address[0]
 
@@ -1299,14 +1447,18 @@ class ReviewHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path: str) -> str:
         path = urlparse(path).path
         if path in {"/review", "/review/"}:
-            default_project_dir = resolve_bio_project_dir(None)
-            return str((default_project_dir / "review" / "index.html").resolve())
+            return str((self.resolve_bio_ui_dir() / "index.html").resolve())
         if path.startswith("/review/"):
-            default_project_dir = resolve_bio_project_dir(None)
             relative = path[len("/review/") :]
-            return str((default_project_dir / "review" / relative).resolve())
-        if path == "/":
-            path = "/gen_093_097/editor/index.html"
+            return str((self.resolve_bio_ui_dir() / relative).resolve())
+        if path in {"/", "/editor", "/editor/"}:
+            return str((GEN_EDITOR_UI_DIR / "index.html").resolve())
+        if path.startswith("/editor/"):
+            relative = path[len("/editor/") :]
+            return str((GEN_EDITOR_UI_DIR / relative).resolve())
+        if path.startswith("/gen_093_097/editor/"):
+            relative = path[len("/gen_093_097/editor/") :]
+            return str((GEN_EDITOR_UI_DIR / relative).resolve())
         return str(ROOT / path.lstrip("/"))
 
     def do_GET(self) -> None:
@@ -1329,9 +1481,8 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
                 return
-            state_path = ensure_bio_state(project_id)
             bundle = bio_bundle_for_client(str(project_id))
-            state = load_bio_json(state_path, {})
+            state = build_bio_state_from_sqlite(bundle, project_id=str(project_id))
             body = json.dumps(
                 {
                     "bundle": bundle,
@@ -1429,12 +1580,10 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(body)
                 return
             bundle_path = project_dir / "review" / "review_data.json"
-            state_path = ensure_bio_state(effective_project_id)
             bundle = load_bio_json(bundle_path, {})
             normalized = normalize_bio_state(bundle, payload, project_dir)
-            state_path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             sync_bio_state_to_sqlite(bundle, normalized, project_dir)
-            body = json.dumps({"ok": True}, ensure_ascii=False).encode("utf-8")
+            body = json.dumps({"ok": True, "mode": "db_only"}, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -1523,46 +1672,57 @@ class ReviewHandler(SimpleHTTPRequestHandler):
                     copied["to_person_id"] = to_lookup["source_person_id"]
                 return copied
 
-            saved_paths = []
+            bridge_write_stats = []
             for index in range(len(merge_source_group_ids) - 1):
                 left_group_id = merge_source_group_ids[index]
                 right_group_id = merge_source_group_ids[index + 1]
                 left_ids = group_people.get(left_group_id, set())
                 right_ids = group_people.get(right_group_id, set())
-                bridge_edges = [
-                    normalize_merge_edge(edge)
-                    for edge in data.get("edges", [])
-                    if (edge.get("from_person_id") in left_ids and edge.get("to_person_id") in right_ids)
-                    or (edge.get("from_person_id") in right_ids and edge.get("to_person_id") in left_ids)
-                ]
-                payload = ensure_bridge_payload(left_group_id, right_group_id)
-                payload["edges"] = bridge_edges
-                path = bridge_json_path(left_group_id, right_group_id)
-                path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                saved_paths.append(str(path))
-            mirror = sync_sqlite_mirror(force=not is_autosave)
-            body = json.dumps({"ok": True, "paths": saved_paths, "sqlite_mirror": mirror}, ensure_ascii=False).encode("utf-8")
+                bridge_edges = []
+                for edge in data.get("edges", []):
+                    from_id = edge.get("from_person_id")
+                    to_id = edge.get("to_person_id")
+                    if not (
+                        (from_id in left_ids and to_id in right_ids)
+                        or (from_id in right_ids and to_id in left_ids)
+                    ):
+                        continue
+                    normalized = normalize_merge_edge(edge)
+                    from_lookup = person_source_lookup.get(str(from_id))
+                    to_lookup = person_source_lookup.get(str(to_id))
+                    if not from_lookup or not to_lookup:
+                        continue
+                    normalized["from_source_group_id"] = from_lookup["source_group_id"]
+                    normalized["to_source_group_id"] = to_lookup["source_group_id"]
+                    bridge_edges.append(normalized)
+                upserted = upsert_bridge_edges_to_sqlite(left_group_id, right_group_id, bridge_edges)
+                bridge_write_stats.append(
+                    {
+                        "pair": f"{left_group_id}__{right_group_id}",
+                        "scope_ref": bridge_scope_ref(left_group_id, right_group_id),
+                        "edge_count": upserted,
+                    }
+                )
+            mirror = current_sqlite_mirror_summary()
+            body = json.dumps(
+                {"ok": True, "mode": "db_direct", "bridge_updates": bridge_write_stats, "sqlite_mirror": mirror},
+                ensure_ascii=False,
+            ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
             return
-        target_json = resolve_group_json(group_param)
-        if use_db_mode_for_group(group_param):
-            sync_group_payload_to_sqlite(
-                db_path=SQLITE_DB_PATH,
-                payload=data,
-                glyph_dir=GLYPH_ASSET_DIR,
-            )
-            body = json.dumps(
-                {"ok": True, "mode": "db_direct", "group_id": data.get("group_id"), "db_path": str(SQLITE_DB_PATH)},
-                ensure_ascii=False,
-            ).encode("utf-8")
-        else:
-            target_json.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            mirror = sync_sqlite_mirror(force=not is_autosave)
-            body = json.dumps({"ok": True, "path": str(target_json), "sqlite_mirror": mirror}, ensure_ascii=False).encode("utf-8")
+        sync_group_payload_to_sqlite(
+            db_path=SQLITE_DB_PATH,
+            payload=data,
+            glyph_dir=GLYPH_ASSET_DIR,
+        )
+        body = json.dumps(
+            {"ok": True, "mode": "db_direct", "group_id": data.get("group_id"), "db_path": str(SQLITE_DB_PATH)},
+            ensure_ascii=False,
+        ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -1588,13 +1748,13 @@ def main() -> int:
         if (path / "project.json").exists() and (path / "review" / "review_data.json").exists()
     }
     BIO_DEFAULT_PROJECT_ID = sorted(BIO_PROJECT_DIRS.keys())[0] if BIO_PROJECT_DIRS else None
-    for project_id in BIO_PROJECT_DIRS:
-        ensure_bio_state(project_id)
     server = ThreadingHTTPServer((args.host, args.port), ReviewHandler)
     print(f"Serving review app at http://{args.host}:{args.port}")
     print(f"Using group data: {GROUP_JSON}")
+    print(f"Serving editor UI from: {GEN_EDITOR_UI_DIR}")
     if BIO_DEFAULT_PROJECT_ID:
         print(f"Serving biography review at http://{args.host}:{args.port}/review/")
+        print(f"Serving biography UI from: {BIO_REVIEW_UI_DIR}")
     try:
       server.serve_forever()
     except KeyboardInterrupt:

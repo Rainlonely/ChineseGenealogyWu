@@ -24,5 +24,8 @@ gen_*/
 pages_jpg_*/
 bridges/
 data/glyph_assets/
+data/glyph_assets_check/
+data/glyph_assets_debug/
 data/genealogy.sqlite
 data/tmp*/
+.run/

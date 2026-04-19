@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/review/" />
+    <title>人物小传校对</title>
+    <link rel="stylesheet" href="./styles.css?v=20260420c" />
+  </head>
+  <body>
+    <div class="app" id="appRoot">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h1>人物小传校对</h1>
+          <div id="projectMeta"></div>
+        </div>
+        <div class="stats" id="stats"></div>
+        <div class="page-list" id="pageList"></div>
+      </aside>
+      <button id="sidebarToggle" class="sidebar-toggle" aria-label="最小化侧栏" title="最小化侧栏">◀</button>
+
+      <main class="content">
+        <header class="toolbar">
+          <div class="toolbar-left">
+            <button id="prevPageBtn" type="button">上一页</button>
+            <button id="nextPageBtn" type="button">下一页</button>
+            <div id="pageTitle"></div>
+          </div>
+          <div class="toolbar-right">
+            <label class="cross-page-toggle">
+              <input type="checkbox" id="crossPageToggle" />
+              <span>跨页模式</span>
+            </label>
+            <select id="crossPageDirection">
+              <option value="next">当前页 + 下一页</option>
+              <option value="prev">上一页 + 当前页</option>
+            </select>
+            <div class="viewer-help">点击框加入拼接；点 × 标记噪音删除</div>
+            <div id="saveStatus">自动保存</div>
+          </div>
+        </header>
+
+        <div class="main-workspace">
+          <section class="panel top-workbench">
+            <div class="workbench-row">
+              <div class="detail-block">
+                <h2>当前人物与传记草稿</h2>
+                <div class="active-person-card">
+                  <div class="active-person-label">当前人物</div>
+                  <div id="activePerson">未选择</div>
+                </div>
+                <div class="selected-list" id="selectedList"></div>
+                <div class="field">
+                  <label for="linearText">拼接文本</label>
+                  <textarea id="linearText" rows="4"></textarea>
+                </div>
+                <div class="field actions">
+                  <button id="clearSelectionBtn">清空已选框</button>
+                  <button id="addBiographyBtn">写入当前人物传记</button>
+                </div>
+                <div class="section-head">
+                  <h2>人物匹配建议</h2>
+                  <button id="addManualMatchBtn">手动添加缺失人物</button>
+                </div>
+                <div class="manual-picker hidden" id="manualPicker">
+                  <div class="field">
+                    <label for="manualGeneration">选择世代</label>
+                    <select id="manualGeneration"></select>
+                  </div>
+                  <div class="field">
+                    <label for="manualSearch">模糊搜索人物</label>
+                    <input id="manualSearch" class="manual-input" placeholder="输入人物名关键词" />
+                  </div>
+                  <div class="manual-search-results" id="manualSearchResults"></div>
+                </div>
+                <div class="match-strip" id="matches"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel viewer-panel">
+            <div class="viewer-multi" id="viewerMulti"></div>
+          </section>
+        </div>
+
+        <section class="panel bottom-records">
+          <div class="detail-block">
+            <h2>已写入记录</h2>
+            <div id="biographyList"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js?v=20260420c"></script>
+  </body>
+</html>
