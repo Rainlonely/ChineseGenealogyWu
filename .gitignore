@@ -1,0 +1,28 @@
+.DS_Store
+
+# Python virtual environments
+.venv/
+.venvs/
+venv/
+env/
+
+# Python cache and tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Externalized data (code/data repo separation)
+workspace_data/
+*.pdf
+*.json
+bio_*/
+gen_*/
+pages_jpg_*/
+bridges/
+data/glyph_assets/
+data/genealogy.sqlite
+data/tmp*/
