@@ -28,6 +28,8 @@ SQLITE_DB_PATH = DEFAULT_DB_PATH
 GLYPH_ASSET_DIR = ROOT / "data" / "glyph_assets"
 OCR_VENV_PYTHON = ROOT / ".venvs" / "paddleocr311" / "bin" / "python"
 PERSON_OCR_HELPER = ROOT / "scripts" / "person_name_ocr_helper.py"
+GENEALOGY_UI_DIR = ROOT / "frontend" / "genealogy-editor"
+BIOGRAPHY_UI_DIR = ROOT / "frontend" / "biography-review"
 PERSON_OPTIONAL_DETAIL_COLUMNS = [
     "source_columns_json",
     "source_text_raw",
@@ -40,6 +42,10 @@ BIO_PROJECT_DIRS: dict[str, Path] = {}
 BIO_DEFAULT_PROJECT_ID: str | None = None
 SQLITE_MIRROR_MIN_INTERVAL_SECONDS = 120
 LAST_SQLITE_MIRROR_AT = 0.0
+
+
+class ReviewHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
 
 
 def parse_group_range(group_id: str | None) -> tuple[int | None, int | None]:
@@ -1007,7 +1013,8 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         return self.client_address[0]
 
     def end_headers(self) -> None:
-        parsed_path = urlparse(self.path).path
+        request_path = getattr(self, "path", "")
+        parsed_path = urlparse(request_path).path if request_path else ""
         if parsed_path == "/review" or parsed_path.startswith("/review/"):
             self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.send_header("Pragma", "no-cache")
@@ -1017,14 +1024,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
     def translate_path(self, path: str) -> str:
         path = urlparse(path).path
         if path in {"/review", "/review/"}:
-            default_project_dir = resolve_bio_project_dir(None)
-            return str((default_project_dir / "review" / "index.html").resolve())
+            return str((BIOGRAPHY_UI_DIR / "index.html").resolve())
         if path.startswith("/review/"):
-            default_project_dir = resolve_bio_project_dir(None)
             relative = path[len("/review/") :]
-            return str((default_project_dir / "review" / relative).resolve())
+            return str((BIOGRAPHY_UI_DIR / relative).resolve())
         if path == "/":
             path = "/gen_093_097/editor/index.html"
+        if path.startswith("/gen_093_097/editor/"):
+            relative = path[len("/gen_093_097/editor/") :]
+            return str((GENEALOGY_UI_DIR / relative).resolve())
         return str(ROOT / path.lstrip("/"))
 
     def do_GET(self) -> None:
@@ -1256,17 +1264,21 @@ def main() -> int:
     BIO_DEFAULT_PROJECT_ID = sorted(BIO_PROJECT_DIRS.keys())[0] if BIO_PROJECT_DIRS else None
     for project_id in BIO_PROJECT_DIRS:
         ensure_bio_state(project_id)
-    server = ThreadingHTTPServer((args.host, args.port), ReviewHandler)
+    try:
+        server = ReviewHTTPServer((args.host, args.port), ReviewHandler)
+    except OSError as exc:
+        print(f"Failed to bind review server at http://{args.host}:{args.port}: {exc}")
+        return 1
     print(f"Serving review app at http://{args.host}:{args.port}")
     print(f"Using group data: {GROUP_JSON}")
     if BIO_DEFAULT_PROJECT_ID:
         print(f"Serving biography review at http://{args.host}:{args.port}/review/")
     try:
-      server.serve_forever()
+        server.serve_forever()
     except KeyboardInterrupt:
-      pass
+        pass
     finally:
-      server.server_close()
+        server.server_close()
     return 0
 
 
