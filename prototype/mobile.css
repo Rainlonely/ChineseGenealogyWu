@@ -1,0 +1,640 @@
+:root {
+  --bg: #f2e9dc;
+  --surface: #fffdf8;
+  --surface-soft: #f8f1e7;
+  --line: #d9c7b0;
+  --text: #2f2418;
+  --muted: #6b5844;
+  --accent: #8d2f23;
+  --accent-deep: #70241a;
+  --success: #24684d;
+  --shadow: 0 16px 36px rgba(79, 56, 31, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background:
+    linear-gradient(180deg, #f8f1e7 0%, #eddcc5 100%);
+  color: var(--text);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.mobile-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 14px;
+}
+
+.phone-frame {
+  width: min(100%, 430px);
+  min-height: min(932px, 100vh - 28px);
+  background: rgba(255, 252, 247, 0.82);
+  border: 1px solid rgba(141, 47, 35, 0.12);
+  border-radius: 28px;
+  box-shadow: 0 30px 80px rgba(72, 49, 30, 0.18);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid rgba(217, 199, 176, 0.75);
+}
+
+.topbar-kicker,
+.section-kicker,
+.hero-kicker {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.topbar h1,
+.hero-card h2,
+.section-head h2 {
+  margin: 0;
+  font-family: "STSong", "Songti SC", serif;
+}
+
+.icon-button,
+.text-button,
+.bottom-link,
+.primary-button,
+.secondary-button,
+.shortcut-card {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: 160ms ease;
+}
+
+.icon-button {
+  width: 38px;
+  height: 38px;
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+
+.mobile-stage {
+  overflow: auto;
+  padding: 16px;
+  display: block;
+}
+
+.mobile-screen {
+  display: none;
+  padding-bottom: 20px;
+}
+
+.mobile-screen.active {
+  display: grid;
+  gap: 14px;
+}
+
+.hero-card,
+.card,
+.result-mobile-card,
+.lane-card {
+  background: var(--surface);
+  border: 1px solid rgba(217, 199, 176, 0.7);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.hero-card {
+  padding: 18px;
+}
+
+.hero-copy,
+.biography-copy,
+.helper-copy {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.card {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.field-label,
+.form-card label,
+.slider-row,
+.switch-chip {
+  display: grid;
+  gap: 8px;
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text);
+  padding: 13px 14px;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 46px;
+  padding: 12px 16px;
+}
+
+.primary-button {
+  background: var(--accent);
+  color: #fff8f4;
+}
+
+.primary-button:hover {
+  background: var(--accent-deep);
+}
+
+.secondary-button,
+.text-button {
+  background: var(--surface-soft);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.wide {
+  width: 100%;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 12px;
+}
+
+.section-head.compact {
+  align-items: start;
+}
+
+.result-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.result-mobile-card {
+  padding: 16px;
+  text-align: left;
+}
+
+.result-mobile-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.result-mobile-meta {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.result-mobile-actions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.result-action-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pill,
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.pill {
+  background: #dfefe8;
+  color: var(--success);
+}
+
+.pill.muted {
+  background: #efe6d8;
+  color: var(--muted);
+}
+
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.meta-chip {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.timeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.timeline-gen {
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.timeline-copy {
+  padding-top: 2px;
+}
+
+.timeline-copy p,
+.lane-node p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+.mobile-hanging-tree {
+  position: relative;
+  min-height: 560px;
+  overflow: hidden;
+}
+
+.mobile-hanging-tree.full {
+  min-height: 860px;
+}
+
+.genealogy-line {
+  position: absolute;
+  background: rgba(34, 34, 34, 0.9);
+  transform-origin: top left;
+}
+
+.genealogy-person {
+  position: absolute;
+  width: 74px;
+  min-height: 132px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fffdfa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.genealogy-person.current {
+  background: #fff4f1;
+  border-color: var(--accent);
+}
+
+.genealogy-person.spouse {
+  background: #f4f7ff;
+  border-color: #b8c8ea;
+}
+
+.genealogy-generation {
+  position: absolute;
+  width: 52px;
+  min-height: 118px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.genealogy-generation span {
+  display: block;
+}
+
+.genealogy-horizontal-card {
+  position: absolute;
+  width: 116px;
+  min-height: 104px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fffdfa;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.genealogy-horizontal-card.current {
+  background: #fff4f1;
+  border-color: var(--accent);
+}
+
+.genealogy-horizontal-card.daughter {
+  background: #fff6fb;
+  border-color: #ecc6dc;
+}
+
+.genealogy-horizontal-card .person-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.genealogy-horizontal-card .person-role {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.branch-tree-wrap {
+  position: relative;
+  min-height: 760px;
+}
+
+.sticky-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.switch-chip {
+  min-height: 40px;
+  align-content: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.tree-context-note.mobile {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 199, 176, 0.78);
+  background: #f9f3e7;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.lane-card {
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.lane-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.notice-card {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fff4df;
+  border: 1px solid #efc98b;
+  color: #7b571f;
+  line-height: 1.6;
+}
+
+.bottom-nav {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(217, 199, 176, 0.75);
+  background: rgba(255, 251, 246, 0.96);
+}
+
+.bottom-link {
+  min-height: 42px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.bottom-link.active {
+  background: var(--surface-soft);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+@media (max-width: 480px) {
+  .mobile-shell {
+    padding: 0;
+  }
+
+  .phone-frame {
+    width: 100%;
+    min-height: 100vh;
+    border-radius: 0;
+    border: 0;
+  }
+}
+
+.mobile-branch-wrap {
+  position: relative;
+  overflow: auto;
+  min-height: 230px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 199, 176, 0.78);
+  background: linear-gradient(180deg, #fdf7ef 0%, #f6eddc 100%);
+}
+
+.mobile-branch-wrap.full {
+  min-height: 560px;
+}
+
+.mobile-hanging-svg,
+.mobile-hanging-tree {
+  position: absolute;
+  inset: 0;
+}
+
+.mobile-hanging-svg {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.mobile-hanging-tree {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.mobile-hanging-tree.preview {
+  min-height: 230px;
+}
+
+.mobile-hanging-tree.full {
+  min-height: 560px;
+}
+
+.mobile-graph-edge-lite {
+  fill: none;
+  stroke: #8d7c63;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mobile-graph-edge-lite.is-focus {
+  stroke: var(--accent);
+  stroke-width: 2.3;
+}
+
+.mobile-generation-tag {
+  position: absolute;
+  width: 42px;
+  padding: 9px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 199, 176, 0.78);
+  background: rgba(255, 252, 247, 0.96);
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  gap: 8px;
+  box-shadow: 0 8px 18px rgba(79, 56, 31, 0.08);
+}
+
+.mobile-generation-tag strong,
+.mobile-generation-tag span,
+.mobile-tree-node-vertical .vertical-name,
+.mobile-tree-node-vertical .vertical-meta {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.mobile-generation-tag strong {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.mobile-generation-tag span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mobile-tree-node-vertical {
+  position: absolute;
+  border-radius: 8px;
+  border: 1px solid #8d7c63;
+  background: rgba(255, 253, 248, 0.98);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  box-shadow: 0 10px 18px rgba(79, 56, 31, 0.08);
+}
+
+.mobile-tree-node-vertical.is-focus {
+  border-color: var(--accent);
+  background: #fff4ed;
+}
+
+.mobile-tree-node-vertical.is-modern {
+  border-color: #7d5b2a;
+  background: #fffaf1;
+}
+
+.mobile-tree-node-vertical.is-spouse {
+  border-color: #7a8ca8;
+  background: #f5f8ff;
+}
+
+.mobile-tree-node-vertical.is-daughter {
+  border-color: #bb7896;
+  background: #fff7fb;
+}
+
+.mobile-tree-node-vertical .vertical-name {
+  font-family: "Noto Serif SC", "Songti SC", "STSong", serif;
+  font-size: 17px;
+  line-height: 1.06;
+  color: var(--text);
+}
+
+.mobile-tree-node-vertical .vertical-meta {
+  font-size: 11px;
+  color: var(--muted);
+}

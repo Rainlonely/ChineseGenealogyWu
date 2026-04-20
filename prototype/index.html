@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>吴氏寻谱</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <p class="eyebrow">吴氏族谱检索原型</p>
+          <h1>吴氏寻谱</h1>
+          <p class="brand-copy">围绕“检索人物、识别支系、补充现代续修”组织 5 个核心页面。</p>
+        </div>
+        <nav class="screen-nav" aria-label="页面导航">
+          <button class="nav-link active" data-screen-target="search">搜索首页</button>
+          <button class="nav-link" data-screen-target="results">查询结果页</button>
+          <button class="nav-link" data-screen-target="detail">人物详情页</button>
+          <button class="nav-link" data-screen-target="branch">支系展开页</button>
+          <button class="nav-link" data-screen-target="correction">姓名勘误页</button>
+          <button class="nav-link" data-screen-target="contribute">补充后代页</button>
+        </nav>
+      </aside>
+
+      <main class="screen-stage">
+        <section class="screen active" id="screen-search" data-screen="search">
+          <div class="screen-header">
+            <p class="page-kicker">搜索首页</p>
+            <h2>用姓名快速定位人物</h2>
+            <p class="page-copy">搜索结果会用“父名 + 世代”区分同名人物。</p>
+          </div>
+
+          <div class="panel panel-search">
+            <label class="search-label" for="search-input">姓名搜索</label>
+            <div class="search-row">
+              <input id="search-input" type="text" value="永昌" />
+              <button class="primary-action" id="search-submit">开始查询</button>
+            </div>
+            <p class="page-copy" id="search-status">输入姓名后查询同名人物，结果会显示父名与世代。</p>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-results" data-screen="results">
+          <div class="screen-header inline-header">
+              <div>
+                <p class="page-kicker">查询结果页</p>
+                <h2 id="results-heading">查询结果</h2>
+              </div>
+            <button class="ghost-action" data-go-screen="search">重新搜索</button>
+          </div>
+
+          <div class="result-list" id="result-list"></div>
+        </section>
+
+        <section class="screen" id="screen-detail" data-screen="detail">
+          <div class="screen-header">
+            <p class="page-kicker">人物详情页</p>
+            <h2 id="detail-name">吴良佐</h2>
+            <div class="detail-meta">
+              <span id="detail-generation">第十六世</span>
+              <span id="detail-father">父名：吴成德</span>
+              <span id="detail-source">数据来源：古籍人物 / 现代续修</span>
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            <article class="panel biography-panel">
+              <h3>人物小传</h3>
+              <p class="biography-copy" id="detail-biography"></p>
+            </article>
+
+            <article class="panel">
+              <div class="panel-title-row">
+                <h3>谱系路线缩略图</h3>
+              </div>
+              <div class="tree-context-note" id="route-note" hidden></div>
+              <ol class="route-list" id="route-list"></ol>
+            </article>
+
+            <article class="panel">
+              <div class="panel-title-row">
+                <h3>近支树预览</h3>
+                <button class="ghost-action small" data-go-screen="branch">展开支系图</button>
+              </div>
+              <div class="tree-context-note" id="detail-branch-note" hidden></div>
+              <div class="branch-preview-wrap">
+                <svg id="branch-preview-svg" class="hanging-tree-svg" aria-hidden="true"></svg>
+                <div id="branch-preview" class="hanging-tree-canvas preview-tree"></div>
+              </div>
+            </article>
+          </div>
+
+          <div class="footer-actions">
+            <button class="secondary-action" data-go-screen="branch">展开完整支系图</button>
+            <button class="secondary-action" data-go-screen="correction">姓名勘误</button>
+            <button class="primary-action" data-go-screen="contribute">补充后代信息</button>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-branch" data-screen="branch">
+          <div class="screen-header">
+            <p class="page-kicker">支系展开页</p>
+            <h2>完整支系图</h2>
+            <p class="page-copy">仅查看当前人物上下若干代，不加载整本全谱。</p>
+          </div>
+
+          <div class="panel control-panel">
+            <div class="control-group">
+              <label for="upward-range">向上几代</label>
+              <input id="upward-range" type="range" min="1" max="4" value="2" />
+              <span class="range-value" id="upward-value">2 代</span>
+            </div>
+            <div class="control-group">
+              <label for="downward-range">向下几代</label>
+              <input id="downward-range" type="range" min="1" max="5" value="3" />
+              <span class="range-value" id="downward-value">3 代</span>
+            </div>
+            <label class="toggle" id="toggle-daughters-wrap">
+              <input id="toggle-daughters" type="checkbox" checked />
+              <span>显示女儿</span>
+            </label>
+            <label class="toggle" id="toggle-spouses-wrap">
+              <input id="toggle-spouses" type="checkbox" checked />
+              <span>显示配偶</span>
+            </label>
+          </div>
+          <div class="panel">
+            <div class="tree-context-note" id="branch-screen-note" hidden></div>
+            <div class="branch-view-wrap">
+              <svg id="tree-columns-svg" class="hanging-tree-svg" aria-hidden="true"></svg>
+              <div id="tree-columns" class="hanging-tree-canvas full-tree"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="screen-correction" data-screen="correction">
+          <div class="screen-header">
+            <p class="page-kicker">姓名勘误页</p>
+            <h2 id="correction-heading">提交姓名校对申请</h2>
+            <p class="page-copy">当你发现人物姓名可能存在录入或校对误差时，可提交勘误申请，由后台审核后处理。</p>
+          </div>
+
+          <form class="panel contribute-form">
+            <div class="form-grid">
+              <label>
+                <span>当前人物</span>
+                <input id="correction-target-name" type="text" readonly />
+              </label>
+              <label>
+                <span>当前姓名</span>
+                <input id="correction-current-value" type="text" readonly />
+              </label>
+              <label>
+                <span>建议更正为</span>
+                <input id="correction-proposed-value" type="text" placeholder="例如：永昌" />
+              </label>
+              <label>
+                <span>联系方式</span>
+                <input id="correction-contact" type="text" placeholder="例如：微信 / 手机号" />
+              </label>
+            </div>
+            <label class="full-width">
+              <span>更正依据</span>
+              <textarea id="correction-reason" rows="4" placeholder="例如：家中抄本、页图核对、同页字辈一致等。"></textarea>
+            </label>
+            <div class="submit-row">
+              <div class="notice-box">
+                提交后进入待审核队列，可被处理为“改正式姓名”或“加入搜索别名”。
+              </div>
+              <button type="button" class="primary-action" id="correction-submit">提交姓名勘误</button>
+            </div>
+            <div class="notice-box" id="correction-status">当前只支持姓名勘误，提交后不会直接改动正式族谱数据。</div>
+          </form>
+        </section>
+
+        <section class="screen" id="screen-contribute" data-screen="contribute">
+          <div class="screen-header">
+            <p class="page-kicker">补充后代页</p>
+            <h2 id="contribute-heading">提交现代续修信息</h2>
+            <p class="page-copy">进入待审核，不直接改古籍原始数据。允许记录女儿、配偶、异姓。</p>
+          </div>
+
+          <form class="panel contribute-form">
+            <div class="form-grid">
+              <label>
+                <span>姓名</span>
+                <input id="contribute-name" type="text" placeholder="例如：吴明哲" />
+              </label>
+              <label>
+                <span>关系</span>
+                <select id="contribute-relation">
+                  <option value="father_son">儿子</option>
+                  <option value="father_daughter">女儿</option>
+                  <option value="spouse">配偶</option>
+                  <option value="mother_son">母子</option>
+                  <option value="mother_daughter">母女</option>
+                </select>
+              </label>
+              <label>
+                <span>在世状态</span>
+                <select id="contribute-living-status">
+                  <option value="living">在世</option>
+                  <option value="deceased">已故</option>
+                  <option value="unknown">不详</option>
+                </select>
+              </label>
+              <label>
+                <span>性别</span>
+                <select id="contribute-gender">
+                  <option value="">未说明</option>
+                  <option value="male">男</option>
+                  <option value="female">女</option>
+                </select>
+              </label>
+              <label>
+                <span>出生日期</span>
+                <input id="contribute-birth-date" type="date" />
+              </label>
+              <label>
+                <span>卒日期</span>
+                <input id="contribute-death-date" type="date" />
+              </label>
+              <label>
+                <span>学业</span>
+                <input id="contribute-education" type="text" placeholder="例如：本科 / 医学博士" />
+              </label>
+              <label>
+                <span>任职情况</span>
+                <input id="contribute-occupation" type="text" placeholder="例如：教师 / 工程师 / 已退休" />
+              </label>
+              <label>
+                <span>联系方式</span>
+                <input id="contribute-contact" type="text" placeholder="例如：微信 / 手机号" />
+              </label>
+            </div>
+            <label class="full-width">
+              <span>备注</span>
+              <textarea id="contribute-notes" rows="5" placeholder="可补充字辈、迁徙、婚配、联系线索等。"></textarea>
+            </label>
+            <div class="submit-row">
+              <div class="notice-box">
+                提交后先进入待审核队列，由续修人员核对，再决定是否纳入现代续修记录。
+              </div>
+              <button type="button" class="primary-action" id="contribute-submit">提交补充信息</button>
+            </div>
+            <div class="notice-box" id="contribute-status">当前会提交到审核队列，不会直接写入正式族谱。</div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

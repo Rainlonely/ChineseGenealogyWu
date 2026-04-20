@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>家谱挂线图校对</title>
+    <link rel="stylesheet" href="/gen_093_097/editor/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 id="groupTitle">家谱校对</h1>
+          <p id="statusText">正在加载...</p>
+        </div>
+        <div class="topbar-actions">
+          <nav id="groupSwitch" class="group-switch" aria-label="分组切换"></nav>
+          <button id="undoBtn" type="button">回退</button>
+          <button id="addPersonBtn" type="button">添加人物</button>
+          <button id="linkModeBtn" type="button">图上补链</button>
+          <button id="finishLinkBtn" type="button">结束当前父</button>
+          <button id="prevPageBtn" type="button">上一页</button>
+          <select id="pageSelect" aria-label="选择页码"></select>
+          <button id="nextPageBtn" type="button">下一页</button>
+        </div>
+      </header>
+      <section id="workspaceSummaryPanel" class="workspace-summary-panel" aria-label="完整树汇总">
+        <div class="summary-heading">
+          <strong>1-102世数据库汇总</strong>
+          <span id="workspaceSummaryText">正在读取数据库汇总...</span>
+        </div>
+        <div class="summary-links">
+          <a class="summary-link-button" href="/gen_093_097/editor/full_tree.html">查看1-102世完整树</a>
+        </div>
+        <div id="workspaceSummaryStats" class="workspace-summary-stats"></div>
+      </section>
+
+      <main class="workspace-layout">
+        <section class="panel people-panel">
+          <div class="hidden-meta" aria-hidden="true">
+            <input id="pageRoleInput" type="text" />
+            <select id="keepAxisSelect">
+              <option value="true">是</option>
+              <option value="false">否</option>
+            </select>
+            <textarea id="pageNotesInput" rows="4"></textarea>
+          </div>
+          <div class="section-header">
+            <div>
+              <h2>人物</h2>
+              <p>当前页人物，新增后会同时出现可编辑框。</p>
+            </div>
+            <div class="people-actions">
+              <button id="peopleLockBtn" type="button">锁定人物区</button>
+            </div>
+          </div>
+          <div id="personsTable" class="table-like"></div>
+        </section>
+
+        <section class="panel image-panel">
+          <div class="panel-title compact-title">
+            <div>
+              <p id="overlayHint" class="overlay-hint">先选右侧人物，再点左图文字框绑定；也可选中人物后直接粘贴截图。</p>
+            </div>
+          </div>
+          <div class="image-wrap">
+            <div id="imageStage" class="image-stage">
+              <img id="pageImage" alt="当前页图像" />
+              <div id="ocrOverlay" class="ocr-overlay"></div>
+              <aside id="generationRail" class="generation-rail" aria-label="世代参考"></aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel edges-panel">
+          <div class="section-header">
+            <div>
+              <h2>父子关系</h2>
+              <p>当前页手动补链，关系预览会同步。</p>
+            </div>
+          </div>
+          <div class="edge-create-box">
+            <label>
+              父
+              <input id="newEdgeFromInput" list="allPersonsList" placeholder="可输入任意页人物名" />
+              <select id="newEdgeFromSelect"></select>
+            </label>
+            <label>
+              子
+              <input id="newEdgeToInput" list="allPersonsList" placeholder="可输入任意页人物名" />
+              <select id="newEdgeToSelect"></select>
+            </label>
+            <button id="addEdgeBtn" type="button">新增父子链</button>
+          </div>
+          <div id="edgesTable" class="table-like"></div>
+        </section>
+
+        <section class="panel graph-panel">
+          <div class="section-header graph-header">
+            <div>
+              <h2>关系预览</h2>
+              <p>只展示当前页的关系图。</p>
+            </div>
+            <div class="graph-actions">
+              <button id="graphZoomOutBtn" type="button">图缩小</button>
+              <button id="graphZoomResetBtn" type="button">图重置</button>
+              <button id="graphZoomInBtn" type="button">图放大</button>
+              <button id="graphFullscreenBtn" type="button">全屏查看</button>
+            </div>
+          </div>
+          <div id="graphWrap" class="graph-wrap">
+            <div id="fullscreenGraphToolbar" class="fullscreen-graph-toolbar">
+              <button id="fullscreenLayoutModeBtn" type="button">按页模式</button>
+              <button id="fullscreenLinkModeBtn" type="button">图上补链</button>
+              <button id="fullscreenFinishLinkBtn" type="button">结束当前父</button>
+              <button id="mergeActionBtn" type="button">合并 93-97 与 98-102世</button>
+              <span id="fullscreenDbSyncHint" class="fullscreen-db-sync-hint" hidden>数据库已同步</span>
+              <span id="fullscreenGraphHint" class="fullscreen-graph-hint">全屏树图校对</span>
+            </div>
+            <svg id="graphSvg"></svg>
+            <section id="fullscreenPageImagePanel" class="fullscreen-page-image-panel" aria-label="分页原图对照">
+              <div class="fullscreen-page-image-title">分页原图对照</div>
+              <div id="fullscreenPageImageStrip" class="fullscreen-page-image-strip"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <datalist id="allPersonsList"></datalist>
+
+    <script src="/gen_093_097/editor/app.js"></script>
+  </body>
+</html>
