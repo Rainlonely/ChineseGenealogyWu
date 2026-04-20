@@ -28,9 +28,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def load_json(path: Path, default):
-    if not path.exists():
+    try:
+        if not path.exists():
+            return default
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, PermissionError, json.JSONDecodeError):
         return default
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def ensure_page_state(page_state: dict) -> dict:
@@ -251,9 +254,9 @@ def sync_state_to_sqlite(bundle: dict, state: dict, project_dir: Path) -> None:
                       source_columns_json = excluded.source_columns_json,
                       source_text_raw = excluded.source_text_raw,
                       source_text_linear = excluded.source_text_linear,
-                      source_text_punctuated = excluded.source_text_punctuated,
-                      source_text_baihua = excluded.source_text_baihua,
-                      source_text_translation_notes = excluded.source_text_translation_notes,
+                      source_text_punctuated = COALESCE(excluded.source_text_punctuated, person_biographies.source_text_punctuated),
+                      source_text_baihua = COALESCE(excluded.source_text_baihua, person_biographies.source_text_baihua),
+                      source_text_translation_notes = COALESCE(excluded.source_text_translation_notes, person_biographies.source_text_translation_notes),
                       match_status = excluded.match_status,
                       match_confidence = excluded.match_confidence,
                       notes_json = excluded.notes_json,
@@ -268,8 +271,8 @@ def sync_state_to_sqlite(bundle: dict, state: dict, project_dir: Path) -> None:
                         json.dumps(source_blocks, ensure_ascii=False),
                         json.dumps(biography.get("ocr_texts") or [], ensure_ascii=False),
                         biography.get("linear_text") or "",
-                        biography.get("linear_text") or "",
-                        biography.get("baihua_text") or "",
+                        biography.get("punctuated_text") or None,
+                        biography.get("baihua_text") or None,
                         None,
                         "reviewed_manual",
                         1.0,

@@ -44,6 +44,30 @@ LAST_SQLITE_MIRROR_AT = 0.0
 COMPLETE_TREE_MAX_GENERATION = 112
 GEN_EDITOR_UI_DIR = ROOT / "products" / "genealogy-editor"
 BIO_REVIEW_UI_DIR = ROOT / "products" / "biography-review"
+TEMP_ICLOUD_BIO_PROJECT_DIR = Path(
+    "/Users/rainwu/Library/Mobile Documents/com~apple~CloudDocs/bio_001_092_qianbian"
+)
+
+
+def path_is_readable(path: Path) -> bool:
+    try:
+        if not path.exists():
+            return False
+        if path.is_dir():
+            next(path.iterdir(), None)
+            return True
+        path.read_bytes()
+        return True
+    except OSError:
+        return False
+
+
+def bio_project_accessible(project_dir: Path) -> bool:
+    return (
+        path_is_readable(project_dir)
+        and path_is_readable(project_dir / "project.json")
+        and path_is_readable(project_dir / "review" / "review_data.json")
+    )
 
 
 def parse_group_range(group_id: str | None) -> tuple[int | None, int | None]:
@@ -1368,6 +1392,8 @@ def resolve_bio_project_dir(project_id: str | None) -> Path:
 def bio_project_meta_list() -> list[dict]:
     rows = []
     for project_id, project_dir in sorted(BIO_PROJECT_DIRS.items()):
+        if not bio_project_accessible(project_dir):
+            continue
         project = load_bio_json(project_dir / "project.json", {})
         rows.append(
             {
@@ -1408,6 +1434,8 @@ def current_bio_person_catalog(max_generation: int = COMPLETE_TREE_MAX_GENERATIO
 
 def bio_bundle_for_client(project_id: str) -> dict:
     project_dir = resolve_bio_project_dir(project_id)
+    if not bio_project_accessible(project_dir):
+        raise PermissionError(f"Biography project is not accessible: {project_dir}")
     bundle_path = project_dir / "review" / "review_data.json"
     bundle = load_bio_json(bundle_path, {})
     pages = []
@@ -1451,6 +1479,11 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if path.startswith("/review/"):
             relative = path[len("/review/") :]
             return str((self.resolve_bio_ui_dir() / relative).resolve())
+        for project_id, project_dir in BIO_PROJECT_DIRS.items():
+            prefix = f"/{project_id}/"
+            if path.startswith(prefix):
+                relative = path[len(prefix) :]
+                return str((project_dir / relative).resolve())
         if path in {"/", "/editor", "/editor/"}:
             return str((GEN_EDITOR_UI_DIR / "index.html").resolve())
         if path.startswith("/editor/"):
@@ -1473,8 +1506,18 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             project_id = query.get("project_id", [BIO_DEFAULT_PROJECT_ID])[0]
             try:
                 project_dir = resolve_bio_project_dir(project_id)
+                if not bio_project_accessible(project_dir):
+                    raise PermissionError(f"Biography project is not accessible: {project_dir}")
             except KeyError:
                 body = json.dumps({"error": "unknown_project"}, ensure_ascii=False).encode("utf-8")
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except PermissionError as exc:
+                body = json.dumps({"error": "project_not_accessible", "detail": str(exc)}, ensure_ascii=False).encode("utf-8")
                 self.send_response(404)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -1745,8 +1788,13 @@ def main() -> int:
     BIO_PROJECT_DIRS = {
         path.name: path.resolve()
         for path in sorted(ROOT.glob("bio_*"))
-        if (path / "project.json").exists() and (path / "review" / "review_data.json").exists()
+        if bio_project_accessible(path.resolve())
     }
+    if bio_project_accessible(TEMP_ICLOUD_BIO_PROJECT_DIR):
+        BIO_PROJECT_DIRS.setdefault(
+            TEMP_ICLOUD_BIO_PROJECT_DIR.name,
+            TEMP_ICLOUD_BIO_PROJECT_DIR.resolve(),
+        )
     BIO_DEFAULT_PROJECT_ID = sorted(BIO_PROJECT_DIRS.keys())[0] if BIO_PROJECT_DIRS else None
     server = ThreadingHTTPServer((args.host, args.port), ReviewHandler)
     print(f"Serving review app at http://{args.host}:{args.port}")

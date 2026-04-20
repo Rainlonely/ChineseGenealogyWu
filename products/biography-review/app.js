@@ -5,6 +5,7 @@ let currentOcrMap = new Map();
 let activePersonId = null;
 let activePersonLabel = "";
 let selectedBlockKeys = new Set();
+let editingBiographyIndex = null;
 let manualPickerOpen = false;
 let saveTimer = null;
 let manualPickerTarget = null;
@@ -129,6 +130,10 @@ function currentPageState() {
   return ensurePageState(currentPage().page);
 }
 
+function clearBiographyEditing() {
+  editingBiographyIndex = null;
+}
+
 function renderStats() {
   const projectMeta = document.getElementById("projectMeta");
   const pageRange = (bundle.page_range || []).join("-");
@@ -209,6 +214,22 @@ function currentLinearText() {
   return selectedBlockEntries().map((item) => item.text).join("");
 }
 
+function collectedLinkedBlockKeys() {
+  const linked = new Set();
+  Object.entries(state.pages || {}).forEach(([pageNo, pageState]) => {
+    (pageState.biographies || []).forEach((biography) => {
+      if (Array.isArray(biography.selected_block_keys) && biography.selected_block_keys.length) {
+        biography.selected_block_keys.forEach((key) => linked.add(String(key)));
+        return;
+      }
+      (biography.selected_ocr_indexes || []).forEach((ocrIndex) => {
+        linked.add(blockKey(pageNo, ocrIndex));
+      });
+    });
+  });
+  return linked;
+}
+
 function scorePersonSearch(name, query) {
   if (!query) return 1;
   if (name === query) return 100;
@@ -232,6 +253,7 @@ function setActivePerson(personId, label) {
   activePersonId = personId;
   activePersonLabel = label;
   selectedBlockKeys = new Set();
+  clearBiographyEditing();
   renderMatches();
   renderDraftPanel();
   renderViewers();
@@ -240,6 +262,7 @@ function setActivePerson(personId, label) {
 function renderViewers() {
   const container = document.getElementById("viewerMulti");
   const pages = displayedPages();
+  const linkedBlockKeys = collectedLinkedBlockKeys();
   container.classList.toggle("cross-page", pages.length > 1);
   container.innerHTML = "";
 
@@ -281,6 +304,8 @@ function renderViewers() {
 
       (ocr?.ordered_items || []).forEach((item) => {
         const key = blockKey(page.page, item.index);
+        const isLinked = linkedBlockKeys.has(key);
+        const hideLabel = isLinked || selectedBlockKeys.has(key);
         const x1 = item.box[0] * scaleX;
         const y1 = item.box[1] * scaleY;
         const x2 = item.box[2] * scaleX;
@@ -288,6 +313,7 @@ function renderViewers() {
         const box = document.createElement("div");
         box.className = "ocr-box";
         if (selectedBlockKeys.has(key)) box.classList.add("selected");
+        if (isLinked) box.classList.add("linked");
         box.style.left = `${x1}px`;
         box.style.top = `${y1}px`;
         box.style.width = `${Math.max(24, x2 - x1)}px`;
@@ -304,10 +330,12 @@ function renderViewers() {
           renderViewers();
         };
 
-        const label = document.createElement("div");
-        label.className = "ocr-label";
-        label.textContent = `${item.index} ${item.text}`;
-        box.appendChild(label);
+        if (!hideLabel) {
+          const label = document.createElement("div");
+          label.className = "ocr-label";
+          label.textContent = `${item.index} ${item.text}`;
+          box.appendChild(label);
+        }
         overlay.appendChild(box);
       });
     };
@@ -521,6 +549,8 @@ function renderMatches() {
 function renderDraftPanel() {
   const pageState = currentPageState();
   document.getElementById("activePerson").textContent = activePersonId ? activePersonLabel : "未选择";
+  const addButton = document.getElementById("addBiographyBtn");
+  addButton.textContent = editingBiographyIndex === null ? "写入当前人物传记" : "更新当前人物传记";
 
   const selectedList = document.getElementById("selectedList");
   selectedList.innerHTML = "";
@@ -543,6 +573,7 @@ function renderDraftPanel() {
     const pageText = (item.source_pages || [currentPage().page]).map((pageNo) => `第${pageNo}页`).join(" + ");
     const div = document.createElement("div");
     div.className = "biography-item";
+    if (editingBiographyIndex === index) div.classList.add("active");
     div.innerHTML = `
       <div><strong>${item.person_name || item.person_id || "未关联人物"}</strong></div>
       <div>来源页: ${pageText}</div>
@@ -554,6 +585,7 @@ function renderDraftPanel() {
     useBtn.onclick = () => {
       activePersonId = item.person_id || null;
       activePersonLabel = item.person_name || item.person_id || "";
+      editingBiographyIndex = index;
       const blockKeys = item.selected_block_keys || (item.selected_ocr_indexes || []).map((ocrIndex) => blockKey(currentPage().page, ocrIndex));
       selectedBlockKeys = new Set(blockKeys);
       renderMatches();
@@ -566,8 +598,11 @@ function renderDraftPanel() {
     delBtn.textContent = "删除";
     delBtn.onclick = () => {
       pageState.biographies.splice(index, 1);
+      if (editingBiographyIndex === index) clearBiographyEditing();
+      else if (editingBiographyIndex !== null && editingBiographyIndex > index) editingBiographyIndex -= 1;
       renderDraftPanel();
       renderPageList();
+      renderViewers();
       scheduleAutoSave();
     };
     div.appendChild(delBtn);
@@ -588,7 +623,7 @@ function addBiography() {
   }
   const person = bundle.person_catalog.find((x) => x.person_id === activePersonId);
   const sourcePages = [...new Set(selectedEntries.map((item) => item.pageNo))];
-  currentPageState().biographies.push({
+  const biographyRecord = {
     person_id: activePersonId,
     person_name: person?.name || activePersonLabel,
     selected_block_keys: selectedEntries.map((item) => blockKey(item.pageNo, item.index)),
@@ -596,8 +631,14 @@ function addBiography() {
     source_pages: sourcePages,
     linear_text: linear,
     baihua_text: "",
-  });
+  };
+  if (editingBiographyIndex !== null && currentPageState().biographies[editingBiographyIndex]) {
+    currentPageState().biographies[editingBiographyIndex] = biographyRecord;
+  } else {
+    currentPageState().biographies.push(biographyRecord);
+  }
   selectedBlockKeys = new Set();
+  clearBiographyEditing();
   renderDraftPanel();
   renderPageList();
   renderViewers();
@@ -631,6 +672,7 @@ async function loadProject(projectId) {
   activePersonId = null;
   activePersonLabel = "";
   selectedBlockKeys = new Set();
+  clearBiographyEditing();
   manualPickerOpen = false;
   manualPickerTarget = null;
   crossPageMode = false;
@@ -664,6 +706,7 @@ async function main() {
   document.getElementById("manualSearch").oninput = renderManualPicker;
   document.getElementById("clearSelectionBtn").onclick = () => {
     selectedBlockKeys = new Set();
+    clearBiographyEditing();
     renderDraftPanel();
     renderViewers();
   };
@@ -671,11 +714,13 @@ async function main() {
   document.getElementById("crossPageToggle").onchange = async (event) => {
     crossPageMode = event.target.checked;
     selectedBlockKeys = new Set();
+    clearBiographyEditing();
     await renderCurrentPage();
   };
   document.getElementById("crossPageDirection").onchange = async (event) => {
     crossPageDirection = event.target.value;
     selectedBlockKeys = new Set();
+    clearBiographyEditing();
     await renderCurrentPage();
   };
   document.getElementById("prevPageBtn").onclick = async () => {
@@ -684,6 +729,7 @@ async function main() {
     activePersonId = null;
     activePersonLabel = "";
     selectedBlockKeys = new Set();
+    clearBiographyEditing();
     await renderCurrentPage();
   };
   document.getElementById("nextPageBtn").onclick = async () => {
@@ -692,6 +738,7 @@ async function main() {
     activePersonId = null;
     activePersonLabel = "";
     selectedBlockKeys = new Set();
+    clearBiographyEditing();
     await renderCurrentPage();
   };
   const initialProjectId = new URLSearchParams(window.location.search).get("project_id");

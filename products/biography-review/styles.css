@@ -285,6 +285,11 @@ button:disabled {
   background: var(--blue-soft);
 }
 
+.ocr-box.linked:not(.selected) {
+  border-color: rgba(47, 125, 76, 0.5);
+  background: rgba(47, 125, 76, 0.08);
+}
+
 .ocr-label {
   position: absolute;
   left: 0;
@@ -415,6 +420,11 @@ button:disabled {
   border-color: var(--blue);
   background: rgba(30, 94, 168, 0.06);
   box-shadow: inset 0 0 0 2px rgba(30, 94, 168, 0.12);
+}
+
+.biography-item.active {
+  border-color: var(--blue);
+  background: rgba(30, 94, 168, 0.06);
 }
 
 #saveStatus {
