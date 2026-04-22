@@ -30,9 +30,18 @@ from app.schemas.submissions import (
 def build_router(person_service, submission_service, correction_service, settings) -> APIRouter:
     router = APIRouter()
 
+    def ensure_writable() -> None:
+        if settings.read_only:
+            raise HTTPException(status_code=403, detail="API is read-only in this deployment")
+
     @router.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
-        return HealthResponse(ok=True, api_version=settings.api_version, db_path=str(settings.db_path))
+        return HealthResponse(
+            ok=True,
+            api_version=settings.api_version,
+            db_path=str(settings.db_path),
+            read_only=settings.read_only,
+        )
 
     @router.get("/api/v1/search/persons", response_model=SearchPersonsResponse)
     def search_persons(q: str = Query(..., min_length=1), limit: int = Query(20, ge=1, le=50)) -> SearchPersonsResponse:
@@ -83,11 +92,13 @@ def build_router(person_service, submission_service, correction_service, setting
 
     @router.post("/api/v1/submissions", response_model=SubmissionCreateResponse, status_code=201)
     def create_submission(request: SubmissionCreateRequest) -> SubmissionCreateResponse:
+        ensure_writable()
         payload = submission_service.create_submission(request.model_dump())
         return SubmissionCreateResponse(**payload)
 
     @router.post("/api/v1/corrections", response_model=CorrectionCreateResponse, status_code=201)
     def create_correction(request: CorrectionCreateRequest) -> CorrectionCreateResponse:
+        ensure_writable()
         payload = correction_service.create_correction_submission(request.model_dump())
         return CorrectionCreateResponse(**payload)
 
@@ -101,6 +112,7 @@ def build_router(person_service, submission_service, correction_service, setting
 
     @router.post("/api/v1/admin/submissions/{submission_id}/approve", response_model=ReviewResponse)
     def approve_submission(submission_id: int, request: ReviewRequest) -> ReviewResponse:
+        ensure_writable()
         try:
             payload = submission_service.approve_submission(submission_id, request.review_note)
             return ReviewResponse(**payload)
@@ -111,6 +123,7 @@ def build_router(person_service, submission_service, correction_service, setting
 
     @router.post("/api/v1/admin/submissions/{submission_id}/reject", response_model=ReviewResponse)
     def reject_submission(submission_id: int, request: ReviewRequest) -> ReviewResponse:
+        ensure_writable()
         try:
             payload = submission_service.reject_submission(submission_id, request.review_note)
             return ReviewResponse(**payload)
@@ -121,6 +134,7 @@ def build_router(person_service, submission_service, correction_service, setting
 
     @router.post("/api/v1/admin/corrections/{correction_id}/approve", response_model=CorrectionReviewResponse)
     def approve_correction(correction_id: int, request: CorrectionApproveRequest) -> CorrectionReviewResponse:
+        ensure_writable()
         try:
             payload = correction_service.approve_correction_submission(
                 correction_id,
@@ -135,6 +149,7 @@ def build_router(person_service, submission_service, correction_service, setting
 
     @router.post("/api/v1/admin/corrections/{correction_id}/reject", response_model=CorrectionReviewResponse)
     def reject_correction(correction_id: int, request: CorrectionRejectRequest) -> CorrectionReviewResponse:
+        ensure_writable()
         try:
             payload = correction_service.reject_correction_submission(correction_id, request.review_note)
             return CorrectionReviewResponse(**payload)

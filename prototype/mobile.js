@@ -1,7 +1,8 @@
 const apiBase =
   window.localStorage.getItem("genealogyApiBase") ||
   window.location.search.match(/[?&]api=([^&]+)/)?.[1] ||
-  "http://127.0.0.1:8000";
+  "";
+let mobileReadOnlyMode = false;
 
 const mobileScreenTitles = {
   search: "搜索首页",
@@ -66,6 +67,23 @@ async function fetchJson(path, options = {}) {
     throw new Error(body.detail || body.error || `Request failed: ${response.status}`);
   }
   return body;
+}
+
+function displayedApiBase() {
+  return apiBase || window.location.origin;
+}
+
+function applyMobileReadOnlyMode() {
+  mobileReadOnlyMode = true;
+  document.querySelectorAll('[data-mobile-screen="correction"], [data-mobile-screen="contribute"]').forEach((node) => {
+    node.hidden = true;
+  });
+  const correctionSubmit = document.getElementById("mobile-correction-submit");
+  const contributeSubmit = document.getElementById("mobile-contribute-submit");
+  if (correctionSubmit) correctionSubmit.disabled = true;
+  if (contributeSubmit) contributeSubmit.disabled = true;
+  setMobileContributeStatus("当前部署为只读模式，线上不接受新增编辑。");
+  setMobileCorrectionStatus("当前部署为只读模式，线上不接受姓名勘误提交。");
 }
 
 function escapeHtml(value) {
@@ -357,10 +375,14 @@ async function renderMobileDetail() {
   document.getElementById("mobile-detail-generation").textContent = item.generation_label;
   document.getElementById("mobile-detail-father").textContent = `父名：${item.father_name || "未识别"}`;
   document.getElementById("mobile-detail-source").textContent = item.source_label;
-  document.getElementById("mobile-detail-biography").textContent =
-    biography.available
-      ? biography.text_punctuated || biography.text_linear || biography.text_raw || "已收录人物小传"
-      : "当前没有可展示的人物小传。";
+  const originalText = biography.available
+    ? biography.text_punctuated || biography.text_linear || biography.text_raw || "已收录人物小传。"
+    : "当前没有可展示的人物小传。";
+  const baihuaText = biography.available
+    ? biography.text_baihua || "当前暂无白话文版本。"
+    : "当前没有可展示的白话文。";
+  document.getElementById("mobile-detail-biography-baihua").textContent = baihuaText;
+  document.getElementById("mobile-detail-biography").textContent = originalText;
   renderMobileRoute(route.items);
   setMobileTreeNote(
     mobileRouteNote,
@@ -481,6 +503,10 @@ function buildMobileSubmissionPayload() {
 }
 
 async function submitMobileContribution() {
+  if (mobileReadOnlyMode) {
+    setMobileContributeStatus("当前部署为只读模式，线上不接受新增编辑。");
+    return;
+  }
   const payload = buildMobileSubmissionPayload();
   if (!payload.new_person.display_name) {
     setMobileContributeStatus("请先填写人物姓名。");
@@ -495,6 +521,10 @@ async function submitMobileContribution() {
 }
 
 async function submitMobileCorrection() {
+  if (mobileReadOnlyMode) {
+    setMobileCorrectionStatus("当前部署为只读模式，线上不接受姓名勘误提交。");
+    return;
+  }
   const payload = buildMobileCorrectionPayload();
   if (!payload.proposed_value) {
     setMobileCorrectionStatus("请先填写建议更正后的姓名。");
@@ -573,10 +603,18 @@ document.getElementById("mobile-correction-submit").addEventListener("click", as
   });
 });
 
-setMobileSearchStatus(`当前 API：${apiBase}。默认示例词可用：永昌`);
+setMobileSearchStatus(`当前 API：${displayedApiBase()}。默认示例词可用：永昌`);
 renderMobileResults();
 updateMobileContributeHeading();
 updateMobileCorrectionForm();
 updateMobileBranchControlsVisibility();
 mobileUpwardValue.textContent = `${mobileUpwardRange.value} 代`;
 mobileDownwardValue.textContent = `${mobileDownwardRange.value} 代`;
+
+fetchJson("/health")
+  .then((health) => {
+    if (health.read_only) {
+      applyMobileReadOnlyMode();
+    }
+  })
+  .catch(() => {});

@@ -31,6 +31,10 @@ class PersonService:
     def _is_auto_person_ref(person_ref: str) -> bool:
         return person_ref.startswith("p_auto_")
 
+    @staticmethod
+    def _historical_person_ref(row: Dict[str, Any]) -> str:
+        return row.get("source_person_id") or row["id"]
+
     def search_persons(self, query: str, limit: int) -> Dict[str, Any]:
         historical_rows = self.history_repo.search_persons(query, limit)
         modern_rows = self.modern_repo.search_persons(query, limit)
@@ -38,14 +42,14 @@ class PersonService:
         for row in historical_rows:
             items.append(
                 {
-                    "person_ref": row["id"],
+                    "person_ref": self._historical_person_ref(row),
                     "person_source": "historical",
                     "name": row["name"],
                     "father_name": row["father_name"],
                     "generation_label": self._generation_label(row["generation"]),
                     "has_biography": bool(row["has_biography"]),
                     "has_modern_extension": bool(row["has_modern_extension"]),
-                    "summary_route": self._build_route_summary("historical", row["id"], row["name"]),
+                    "summary_route": self._build_route_summary("historical", self._historical_person_ref(row), row["name"]),
                     "match_reason": "按主名或别名命中",
                     "matched_name": row["matched_name"],
                     "match_type": row["match_type"],
@@ -120,7 +124,7 @@ class PersonService:
             biography = self.history_repo.get_best_biography(person_ref)
             return {
                 "item": {
-                    "person_ref": row["id"],
+                    "person_ref": self._historical_person_ref(row),
                     "person_source": "historical",
                     "name": row["name"],
                     "father_name": row["father_name"],
@@ -204,7 +208,7 @@ class PersonService:
                 {
                     "generation": row["generation"],
                     "name": row["name"],
-                    "person_ref": row["id"],
+                    "person_ref": self._historical_person_ref(row),
                     "person_source": "historical",
                     "note": "父系主链",
                 }
@@ -214,7 +218,7 @@ class PersonService:
                 {
                     "generation": person["generation"],
                     "name": person["name"],
-                    "person_ref": person["id"],
+                    "person_ref": self._historical_person_ref(person),
                     "person_source": "historical",
                     "note": "当前查看人物",
                 }
@@ -282,7 +286,7 @@ class PersonService:
                         "generation": row["generation"],
                         "nodes": [
                             {
-                                "person_ref": row["id"],
+                                "person_ref": self._historical_person_ref(row),
                                 "person_source": "historical",
                                 "name": row["name"],
                                 "relation_to_focus": "父系祖先",
@@ -295,7 +299,7 @@ class PersonService:
 
             focus_nodes = [
                 {
-                    "person_ref": person["id"],
+                    "person_ref": self._historical_person_ref(person),
                     "person_source": "historical",
                     "name": person["name"],
                     "relation_to_focus": "当前人物",
@@ -314,7 +318,7 @@ class PersonService:
             for level in range(1, down + 1):
                 nodes = [
                     {
-                        "person_ref": row["id"],
+                        "person_ref": self._historical_person_ref(row),
                         "person_source": "historical",
                         "name": row["name"],
                         "relation_to_focus": f"下 {level} 代",
@@ -335,7 +339,7 @@ class PersonService:
                 )
             return {
                 "focus": {
-                    "person_ref": person["id"],
+                    "person_ref": self._historical_person_ref(person),
                     "person_source": "historical",
                     "name": person["name"],
                     "generation_label": self._generation_label(person["generation"]),
@@ -383,7 +387,7 @@ class PersonService:
                         "generation": anchor["generation"],
                         "nodes": [
                             {
-                                "person_ref": anchor["id"],
+                                "person_ref": self._historical_person_ref(anchor),
                                 "person_source": "historical",
                                 "name": anchor["name"],
                                 "relation_to_focus": "历史挂接点",

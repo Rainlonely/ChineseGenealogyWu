@@ -13,7 +13,8 @@ from app.settings import Settings, get_settings
 
 def create_app(custom_settings: Settings | None = None) -> FastAPI:
     settings = custom_settings or get_settings()
-    init_modern_schema(settings.db_path)
+    if not settings.read_only:
+        init_modern_schema(settings.db_path)
 
     app = FastAPI(title=settings.api_title, version=settings.api_version)
     app.add_middleware(

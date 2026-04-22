@@ -10,6 +10,23 @@ class HistoryRepository:
     def __init__(self, db_path: Path):
         self.db_path = db_path
 
+    def resolve_person_id(self, person_ref: str) -> Optional[str]:
+        conn = connect(self.db_path)
+        try:
+            row = conn.execute(
+                """
+                SELECT p.id
+                FROM persons AS p
+                WHERE p.id = ? OR p.source_person_id = ?
+                ORDER BY CASE WHEN p.id = ? THEN 0 ELSE 1 END
+                LIMIT 1
+                """,
+                (person_ref, person_ref, person_ref),
+            ).fetchone()
+            return str(row["id"]) if row else None
+        finally:
+            conn.close()
+
     def search_persons(self, query: str, limit: int) -> List[Dict[str, Any]]:
         search_like = f"%{query}%"
         conn = connect(self.db_path)
@@ -18,6 +35,7 @@ class HistoryRepository:
                 """
                 SELECT
                   p.id,
+                  p.source_person_id,
                   p.name,
                   p.generation,
                   (
@@ -62,6 +80,7 @@ class HistoryRepository:
                 """
                 SELECT
                   p.id,
+                  p.source_person_id,
                   p.name,
                   p.generation,
                   (
@@ -127,12 +146,16 @@ class HistoryRepository:
             conn.close()
 
     def get_person(self, person_id: str) -> Optional[Dict[str, Any]]:
+        canonical_person_id = self.resolve_person_id(person_id)
+        if not canonical_person_id:
+            return None
         conn = connect(self.db_path)
         try:
             row = conn.execute(
                 """
                 SELECT
                   p.id,
+                  p.source_person_id,
                   p.name,
                   p.generation,
                   p.group_id,
@@ -159,13 +182,16 @@ class HistoryRepository:
                 FROM persons AS p
                 WHERE p.id = ?
                 """,
-                (person_id,),
+                (canonical_person_id,),
             ).fetchone()
             return dict(row) if row else None
         finally:
             conn.close()
 
     def get_best_biography(self, person_id: str) -> Optional[Dict[str, Any]]:
+        canonical_person_id = self.resolve_person_id(person_id)
+        if not canonical_person_id:
+            return None
         conn = connect(self.db_path)
         try:
             row = conn.execute(
@@ -191,13 +217,16 @@ class HistoryRepository:
                   pb.id DESC
                 LIMIT 1
                 """,
-                (person_id,),
+                (canonical_person_id,),
             ).fetchone()
             return dict(row) if row else None
         finally:
             conn.close()
 
     def get_ancestor_chain(self, person_id: str, depth: int) -> List[Dict[str, Any]]:
+        canonical_person_id = self.resolve_person_id(person_id)
+        if not canonical_person_id:
+            return []
         conn = connect(self.db_path)
         try:
             rows = conn.execute(
@@ -206,6 +235,7 @@ class HistoryRepository:
                   SELECT
                     1 AS level,
                     p.id,
+                    p.source_person_id,
                     p.name,
                     p.generation,
                     'father_child' AS relation_type
@@ -217,6 +247,7 @@ class HistoryRepository:
                   SELECT
                     ancestor_chain.level + 1,
                     p.id,
+                    p.source_person_id,
                     p.name,
                     p.generation,
                     'father_child' AS relation_type
@@ -230,13 +261,16 @@ class HistoryRepository:
                 SELECT * FROM ancestor_chain
                 ORDER BY level ASC
                 """,
-                (person_id, depth),
+                (canonical_person_id, depth),
             ).fetchall()
             return [dict(row) for row in rows]
         finally:
             conn.close()
 
     def get_descendant_rows(self, person_id: str, depth: int) -> List[Dict[str, Any]]:
+        canonical_person_id = self.resolve_person_id(person_id)
+        if not canonical_person_id:
+            return []
         conn = connect(self.db_path)
         try:
             rows = conn.execute(
@@ -245,6 +279,7 @@ class HistoryRepository:
                   SELECT
                     1 AS level,
                     p.id,
+                    p.source_person_id,
                     p.name,
                     p.generation,
                     r.relation_type
@@ -256,6 +291,7 @@ class HistoryRepository:
                   SELECT
                     descendant_chain.level + 1,
                     p.id,
+                    p.source_person_id,
                     p.name,
                     p.generation,
                     r.relation_type
@@ -269,7 +305,7 @@ class HistoryRepository:
                 SELECT * FROM descendant_chain
                 ORDER BY level ASC, generation ASC, name ASC
                 """,
-                (person_id, depth),
+                (canonical_person_id, depth),
             ).fetchall()
             return [dict(row) for row in rows]
         finally:

@@ -1,0 +1,23 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      GENEALOGY_DB_PATH: /data/genealogy.sqlite
+      GENEALOGY_READ_ONLY: "1"
+    volumes:
+      - ./data/genealogy.sqlite:/data/genealogy.sqlite:ro
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  prototype:
+    build:
+      context: .
+      dockerfile: prototype/Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "${PROTOTYPE_PORT:-18080}:80"
+    restart: unless-stopped

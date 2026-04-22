@@ -10,6 +10,7 @@ from pathlib import Path
 class Settings:
     repo_root: Path
     db_path: Path
+    read_only: bool = False
     api_title: str = "Wu Genealogy API"
     api_version: str = "v1"
 
@@ -18,4 +19,5 @@ class Settings:
 def get_settings() -> Settings:
     repo_root = Path(__file__).resolve().parents[2]
     db_path = Path(os.getenv("GENEALOGY_DB_PATH", repo_root / "data" / "genealogy.sqlite")).resolve()
-    return Settings(repo_root=repo_root, db_path=db_path)
+    read_only = os.getenv("GENEALOGY_READ_ONLY", "0").strip().lower() in {"1", "true", "yes", "on"}
+    return Settings(repo_root=repo_root, db_path=db_path, read_only=read_only)

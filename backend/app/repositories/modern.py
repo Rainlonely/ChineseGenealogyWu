@@ -12,6 +12,23 @@ class ModernRepository:
     def __init__(self, db_path: Path):
         self.db_path = db_path
 
+    def resolve_historical_person_id(self, person_ref: str) -> Optional[str]:
+        conn = connect(self.db_path)
+        try:
+            row = conn.execute(
+                """
+                SELECT p.id
+                FROM persons AS p
+                WHERE p.id = ? OR p.source_person_id = ?
+                ORDER BY CASE WHEN p.id = ? THEN 0 ELSE 1 END
+                LIMIT 1
+                """,
+                (person_ref, person_ref, person_ref),
+            ).fetchone()
+            return str(row["id"]) if row else None
+        finally:
+            conn.close()
+
     def search_persons(self, query: str, limit: int) -> List[Dict[str, Any]]:
         search_like = f"%{query}%"
         conn = connect(self.db_path)
@@ -498,6 +515,13 @@ class ModernRepository:
         person_source = correction["target_person_source"]
         current_value = correction.get("current_value")
         proposed_value = correction["proposed_value"]
+        alias_person_ref = person_ref
+        if person_source == "historical":
+            canonical_historical_ref = self.resolve_historical_person_id(person_ref)
+            if not canonical_historical_ref:
+                raise KeyError(f"Historical person {person_ref} not found")
+            person_ref = canonical_historical_ref
+            alias_person_ref = canonical_historical_ref
 
         conn = connect(self.db_path)
         try:
@@ -532,7 +556,7 @@ class ModernRepository:
                           status
                         ) VALUES (?, ?, ?, 'correction_accepted', ?, 'active')
                         """,
-                        (person_ref, person_source, current_value, correction_id),
+                        (alias_person_ref, person_source, current_value, correction_id),
                     )
             if proposed_value:
                 conn.execute(
@@ -546,7 +570,7 @@ class ModernRepository:
                       status
                     ) VALUES (?, ?, ?, 'correction_accepted', ?, 'active')
                     """,
-                    (person_ref, person_source, proposed_value, correction_id),
+                    (alias_person_ref, person_source, proposed_value, correction_id),
                 )
             conn.execute(
                 """

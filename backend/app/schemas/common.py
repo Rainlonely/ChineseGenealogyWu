@@ -7,3 +7,4 @@ class HealthResponse(BaseModel):
     ok: bool
     api_version: str
     db_path: str
+    read_only: bool

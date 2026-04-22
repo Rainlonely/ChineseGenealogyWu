@@ -133,6 +133,13 @@ button {
   line-height: 1.6;
 }
 
+.biography-subtitle {
+  margin: 6px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .card {
   padding: 16px;
   display: grid;
