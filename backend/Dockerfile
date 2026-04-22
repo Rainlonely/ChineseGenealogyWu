@@ -3,10 +3,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_DEFAULT_TIMEOUT=120
 
-COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir "fastapi>=0.110,<1" "uvicorn>=0.29,<1"
 
 COPY backend/app /app/app
 
