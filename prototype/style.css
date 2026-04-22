@@ -290,8 +290,23 @@ input[type="range"] {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "biography biography"
+    "route preview";
   gap: 18px;
+}
+
+.detail-grid > .biography-panel {
+  grid-area: biography;
+}
+
+.detail-grid > .route-panel {
+  grid-area: route;
+}
+
+.detail-grid > .preview-panel {
+  grid-area: preview;
 }
 
 .panel-title-row {
@@ -526,6 +541,14 @@ input[type="range"] {
   .control-panel,
   .result-card {
     grid-template-columns: 1fr;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "biography"
+      "route"
+      "preview";
   }
 }
 

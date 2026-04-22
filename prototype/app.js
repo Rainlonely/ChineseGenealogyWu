@@ -12,6 +12,10 @@ const state = {
   previewBranch: null,
   fullBranch: null,
 };
+const historyStateKey = "__prototypeRouteV1";
+const routeScreenKey = "screen";
+const routePersonSourceKey = "person_source";
+const routePersonRefKey = "person_ref";
 
 const resultList = document.getElementById("result-list");
 const routeList = document.getElementById("route-list");
@@ -45,6 +49,69 @@ function switchScreen(screenName) {
   document.querySelectorAll(".nav-link").forEach((link) => {
     link.classList.toggle("active", link.dataset.screenTarget === screenName);
   });
+}
+
+function isSamePerson(left, right) {
+  if (!left || !right) return false;
+  return left.person_source === right.person_source && left.person_ref === right.person_ref;
+}
+
+function snapshotPerson(person) {
+  if (!person) return null;
+  return {
+    person_source: person.person_source,
+    person_ref: person.person_ref,
+    name: person.name || "",
+    father_name: person.father_name || "",
+    generation_label: person.generation_label || "",
+    has_biography: Boolean(person.has_biography),
+    has_modern_extension: Boolean(person.has_modern_extension),
+  };
+}
+
+function buildRouteUrl(routeState) {
+  const url = new URL(window.location.href);
+  const params = url.searchParams;
+  if (routeState.screen) {
+    params.set(routeScreenKey, routeState.screen);
+  } else {
+    params.delete(routeScreenKey);
+  }
+  if (routeState.screen === "detail" && routeState.selectedPerson) {
+    params.set(routePersonSourceKey, routeState.selectedPerson.person_source);
+    params.set(routePersonRefKey, routeState.selectedPerson.person_ref);
+  } else {
+    params.delete(routePersonSourceKey);
+    params.delete(routePersonRefKey);
+  }
+  const query = params.toString();
+  return `${url.pathname}${query ? `?${query}` : ""}${url.hash}`;
+}
+
+function buildRouteState({ screen = state.activeScreen, selectedPerson = state.selectedPerson } = {}) {
+  return {
+    [historyStateKey]: true,
+    screen,
+    selectedPerson: screen === "detail" ? snapshotPerson(selectedPerson) : null,
+  };
+}
+
+function pushRouteState(payload) {
+  const nextState = buildRouteState(payload);
+  const current = history.state;
+  if (current?.[historyStateKey]) {
+    if (current.screen === nextState.screen) {
+      if (nextState.screen !== "detail" || isSamePerson(current.selectedPerson, nextState.selectedPerson)) {
+        return;
+      }
+    }
+  }
+  history.pushState(nextState, "", buildRouteUrl(nextState));
+}
+
+function replaceRouteState(payload) {
+  const nextState = buildRouteState(payload);
+  history.replaceState(nextState, "", buildRouteUrl(nextState));
 }
 
 async function fetchJson(path, options = {}) {
@@ -100,6 +167,24 @@ function setCorrectionStatus(message) {
 function setTreeNote(element, message) {
   element.hidden = !message;
   element.textContent = message || "";
+}
+
+function buildPersonRef(personSource, personRef, fallback = {}) {
+  return {
+    person_source: personSource,
+    person_ref: personRef,
+    name: fallback.name || personRef,
+    father_name: fallback.father_name || "",
+    generation_label: fallback.generation_label || "",
+    has_biography: Boolean(fallback.has_biography),
+    has_modern_extension: Boolean(fallback.has_modern_extension),
+  };
+}
+
+async function jumpToPerson(personSource, personRef, fallback = {}) {
+  if (!personSource || !personRef) return;
+  const target = buildPersonRef(personSource, personRef, fallback);
+  await selectPerson(target);
 }
 
 function updateBranchControlsVisibility() {
@@ -318,6 +403,27 @@ function drawHangTree(svg, canvas, payload, options = {}) {
         <div class="vertical-name">${escapeHtml(node.name)}</div>
         <div class="vertical-meta">${escapeHtml(relation)}</div>
       `;
+      card.style.cursor = "pointer";
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", `查看人物 ${node.name} 详情`);
+      const onJump = async () => {
+        try {
+          await jumpToPerson(node.person_source, node.person_ref, {
+            name: node.name,
+          });
+        } catch (error) {
+          setSearchStatus(`人物详情加载失败：${error.message}`);
+        }
+      };
+      card.addEventListener("click", () => {
+        void onJump();
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        void onJump();
+      });
       canvas.appendChild(card);
     });
   });
@@ -402,6 +508,10 @@ function renderRoute(items) {
   routeList.innerHTML = "";
   items.forEach((item) => {
     const entry = document.createElement("li");
+    entry.style.cursor = "pointer";
+    entry.tabIndex = 0;
+    entry.setAttribute("role", "button");
+    entry.setAttribute("aria-label", `查看人物 ${item.name} 详情`);
     entry.innerHTML = `
       <div class="route-generation">${item.generation ? `${item.generation}世` : "现代"}</div>
       <div class="route-person">
@@ -409,6 +519,24 @@ function renderRoute(items) {
         <div class="preview-meta">${escapeHtml(item.note)}</div>
       </div>
     `;
+    const onJump = async () => {
+      try {
+        await jumpToPerson(item.person_source, item.person_ref, {
+          name: item.name,
+          generation_label: item.generation ? `第${item.generation}世` : "现代续修",
+        });
+      } catch (error) {
+        setSearchStatus(`人物详情加载失败：${error.message}`);
+      }
+    };
+    entry.addEventListener("click", () => {
+      void onJump();
+    });
+    entry.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      void onJump();
+    });
     routeList.appendChild(entry);
   });
 }
@@ -424,6 +552,14 @@ async function renderDetail() {
   ]);
 
   const item = detail.item;
+  state.selectedPerson = {
+    ...state.selectedPerson,
+    person_source: item.person_source,
+    person_ref: item.person_ref,
+    name: item.name,
+    father_name: item.father_name,
+    generation_label: item.generation_label,
+  };
   document.getElementById("detail-name").textContent = item.name;
   document.getElementById("detail-generation").textContent = item.generation_label;
   document.getElementById("detail-father").textContent = `父名：${item.father_name || "未识别"}`;
@@ -501,15 +637,64 @@ async function searchPersons() {
   renderResults();
   setSearchStatus(`已找到 ${payload.total} 条可识别结果。`);
   switchScreen("results");
+  pushRouteState({ screen: "results", selectedPerson: null });
 }
 
-async function selectPerson(person) {
+async function selectPerson(person, options = {}) {
+  const { pushHistory = true } = options;
   state.selectedPerson = person;
   updateBranchControlsVisibility();
   updateContributeHeading();
   updateCorrectionForm();
   await renderDetail();
   switchScreen("detail");
+  if (pushHistory) {
+    pushRouteState({ screen: "detail", selectedPerson: state.selectedPerson });
+  }
+}
+
+async function resolveRoutePerson(personState) {
+  if (!personState?.person_source || !personState?.person_ref) return null;
+  const found = state.results.find((item) => isSamePerson(item, personState));
+  if (found) return found;
+  return {
+    person_source: personState.person_source,
+    person_ref: personState.person_ref,
+    name: personState.name || personState.person_ref,
+    father_name: personState.father_name || "",
+    generation_label: personState.generation_label || "",
+    has_biography: Boolean(personState.has_biography),
+    has_modern_extension: Boolean(personState.has_modern_extension),
+  };
+}
+
+async function applyRouteState(routeState) {
+  if (routeState?.screen === "detail" && routeState.selectedPerson) {
+    const person = await resolveRoutePerson(routeState.selectedPerson);
+    if (person) {
+      await selectPerson(person, { pushHistory: false });
+      replaceRouteState({ screen: "detail", selectedPerson: state.selectedPerson });
+      return;
+    }
+  }
+  switchScreen(routeState?.screen || "search");
+}
+
+function parseRouteFromLocation() {
+  const params = new URLSearchParams(window.location.search);
+  const screen = params.get(routeScreenKey) || "search";
+  const personSource = params.get(routePersonSourceKey);
+  const personRef = params.get(routePersonRefKey);
+  if (screen === "detail" && personSource && personRef) {
+    return buildRouteState({
+      screen,
+      selectedPerson: {
+        person_source: personSource,
+        person_ref: personRef,
+      },
+    });
+  }
+  return buildRouteState({ screen, selectedPerson: null });
 }
 
 function buildCorrectionPayload() {
@@ -607,6 +792,7 @@ document.querySelectorAll("[data-go-screen]").forEach((button) => {
       }
     }
     switchScreen(target);
+    pushRouteState({ screen: target, selectedPerson: state.selectedPerson });
   });
 });
 
@@ -621,6 +807,7 @@ document.querySelectorAll(".nav-link").forEach((button) => {
       }
     }
     switchScreen(target);
+    pushRouteState({ screen: target, selectedPerson: state.selectedPerson });
   });
 });
 
@@ -671,18 +858,34 @@ document.getElementById("correction-submit").addEventListener("click", async () 
   });
 });
 
-renderResults();
-setSearchStatus(`当前 API：${displayedApiBase()}。默认示例词可用：永昌`);
-updateContributeHeading();
-updateCorrectionForm();
-updateBranchControlsVisibility();
-upwardValue.textContent = `${upwardRange.value} 代`;
-downwardValue.textContent = `${downwardRange.value} 代`;
+window.addEventListener("popstate", async (event) => {
+  try {
+    await applyRouteState(event.state?.[historyStateKey] ? event.state : parseRouteFromLocation());
+  } catch (error) {
+    setSearchStatus(`页面回退失败：${error.message}`);
+  }
+});
 
-fetchJson("/health")
-  .then((health) => {
-    if (health.read_only) {
-      applyReadOnlyMode();
-    }
-  })
-  .catch(() => {});
+async function bootstrap() {
+  renderResults();
+  setSearchStatus(`当前 API：${displayedApiBase()}。默认示例词可用：永昌`);
+  updateContributeHeading();
+  updateCorrectionForm();
+  updateBranchControlsVisibility();
+  upwardValue.textContent = `${upwardRange.value} 代`;
+  downwardValue.textContent = `${downwardRange.value} 代`;
+  await applyRouteState(parseRouteFromLocation());
+  replaceRouteState({ screen: state.activeScreen, selectedPerson: state.selectedPerson });
+  fetchJson("/health")
+    .then((health) => {
+      if (health.read_only) {
+        applyReadOnlyMode();
+      }
+    })
+    .catch(() => {});
+}
+
+bootstrap().catch((error) => {
+  setSearchStatus(`页面初始化失败：${error.message}`);
+  replaceRouteState({ screen: state.activeScreen, selectedPerson: state.selectedPerson });
+});
