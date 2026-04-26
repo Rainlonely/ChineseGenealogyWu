@@ -19,14 +19,22 @@ from run_biography_review_server import (
     normalize_state as normalize_bio_state,
     sync_state_to_sqlite as sync_bio_state_to_sqlite,
 )
-from workspace_paths import ROOT
+from workspace_paths import (
+    ROOT,
+    WORKSPACE_BRIDGES_ROOT,
+    WORKSPACE_GLYPH_ASSETS_ROOT,
+    group_json_path as workspace_group_json_path,
+    iter_bio_project_dirs,
+    iter_group_dirs,
+    resolve_repo_asset_path,
+)
 
-DEFAULT_GROUP_JSON = ROOT / "gen_093_097" / "group_template.json"
+DEFAULT_GROUP_JSON = workspace_group_json_path("gen_093_097")
 GROUP_JSON = DEFAULT_GROUP_JSON
 MERGE_WORKSPACE_PREFIX = "merge__"
-BRIDGE_DIR = ROOT / "bridges"
+BRIDGE_DIR = WORKSPACE_BRIDGES_ROOT if WORKSPACE_BRIDGES_ROOT.exists() else ROOT / "bridges"
 SQLITE_DB_PATH = DEFAULT_DB_PATH
-GLYPH_ASSET_DIR = ROOT / "data" / "glyph_assets"
+GLYPH_ASSET_DIR = WORKSPACE_GLYPH_ASSETS_ROOT if WORKSPACE_GLYPH_ASSETS_ROOT.exists() else ROOT / "data" / "glyph_assets"
 OCR_VENV_PYTHON = ROOT / ".venvs" / "paddleocr311" / "bin" / "python"
 PERSON_OCR_HELPER = ROOT / "scripts" / "person_name_ocr_helper.py"
 PERSON_OPTIONAL_DETAIL_COLUMNS = [
@@ -44,9 +52,6 @@ LAST_SQLITE_MIRROR_AT = 0.0
 COMPLETE_TREE_MAX_GENERATION = 112
 GEN_EDITOR_UI_DIR = ROOT / "products" / "genealogy-editor"
 BIO_REVIEW_UI_DIR = ROOT / "products" / "biography-review"
-TEMP_ICLOUD_BIO_PROJECT_DIR = Path(
-    "/Users/rainwu/Library/Mobile Documents/com~apple~CloudDocs/bio_001_092_qianbian"
-)
 
 
 def path_is_readable(path: Path) -> bool:
@@ -118,7 +123,7 @@ def resolve_group_json(group_param: str | None) -> Path:
     if parse_merge_workspace_id(group_param):
         return ROOT / (group_param or "merge_virtual") / "virtual.json"
     if group_param:
-        candidate = ROOT / group_param / "group_template.json"
+        candidate = workspace_group_json_path(group_param)
         if candidate.exists():
             return candidate
     return GROUP_JSON
@@ -146,6 +151,48 @@ def ensure_bridge_payload(left_group_id: str, right_group_id: str) -> dict:
 
 def bridge_scope_ref(left_group_id: str, right_group_id: str) -> str:
     return f"{MERGE_WORKSPACE_PREFIX}{left_group_id}__{right_group_id}"
+
+
+def upsert_bridge_payload_to_sqlite(payload: dict) -> dict:
+    left_group_id = str(payload.get("left_group_id") or "").strip()
+    right_group_id = str(payload.get("right_group_id") or "").strip()
+    if not left_group_id or not right_group_id:
+        return {"ok": False, "error": "bridge payload missing group ids", "edge_count": 0}
+    edges = []
+    for edge in payload.get("edges", []):
+        if not isinstance(edge, dict):
+            continue
+        normalized = dict(edge)
+        normalized["from_source_group_id"] = left_group_id
+        normalized["to_source_group_id"] = right_group_id
+        edges.append(normalized)
+    edge_count = upsert_bridge_edges_to_sqlite(left_group_id, right_group_id, edges)
+    return {
+        "ok": True,
+        "pair": f"{left_group_id}__{right_group_id}",
+        "scope_ref": bridge_scope_ref(left_group_id, right_group_id),
+        "edge_count": edge_count,
+    }
+
+
+def restore_related_bridges_to_sqlite(group_id: str | None) -> list[dict]:
+    if not group_id:
+        return []
+    stats = []
+    for path in sorted(BRIDGE_DIR.glob("*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            stats.append({"ok": False, "path": str(path), "error": str(exc), "edge_count": 0})
+            continue
+        left_group_id = str(payload.get("left_group_id") or "").strip()
+        right_group_id = str(payload.get("right_group_id") or "").strip()
+        if group_id not in {left_group_id, right_group_id}:
+            continue
+        stat = upsert_bridge_payload_to_sqlite(payload)
+        stat["path"] = str(path)
+        stats.append(stat)
+    return stats
 
 
 def upsert_bridge_edges_to_sqlite(left_group_id: str, right_group_id: str, edges: list[dict]) -> int:
@@ -432,7 +479,7 @@ def build_page_linear_remap(source_pages: list[int], target_pages: list[int]) ->
 def build_merge_workspace_payload(source_group_ids: list[str]) -> dict:
     groups = []
     for group_id in source_group_ids:
-        payload = json.loads((ROOT / group_id / "group_template.json").read_text(encoding="utf-8"))
+        payload = json.loads(workspace_group_json_path(group_id).read_text(encoding="utf-8"))
         groups.append(payload)
 
     anchor_group = groups[-1]
@@ -603,7 +650,7 @@ def payload_for_group(group_param: str | None) -> dict:
 
 
 def group_json_path(group_id: str) -> Path:
-    return ROOT / group_id / "group_template.json"
+    return workspace_group_json_path(group_id)
 
 
 def load_group_payload(group_id: str) -> dict:
@@ -993,7 +1040,7 @@ def crop_person_glyph(person_id: str) -> dict:
     person = detail["person"]
     glyph_image_path = person.get("glyph_image")
     if glyph_image_path:
-        local_glyph_path = ROOT / str(glyph_image_path).lstrip("/")
+        local_glyph_path = resolve_repo_asset_path(str(glyph_image_path))
         if local_glyph_path.exists():
             return {
                 "ok": True,
@@ -1008,7 +1055,7 @@ def crop_person_glyph(person_id: str) -> dict:
     if not page_image_path:
         return {"ok": False, "error": "该人物没有整页图路径"}
 
-    image_path = ROOT / str(page_image_path).lstrip("/")
+    image_path = resolve_repo_asset_path(str(page_image_path))
     if not image_path.exists():
         return {"ok": False, "error": f"整页图不存在：{image_path}"}
     return {
@@ -1085,12 +1132,13 @@ def sync_sqlite_mirror(force: bool = True) -> dict:
     try:
         group_jsons = [
             path
-            for path in sorted(ROOT.glob("gen_*/*"))
+            for group_dir in iter_group_dirs("gen_*")
+            for path in [group_dir / "group_template.json"]
             if path.name == "group_template.json" and group_within_complete_tree(path)
         ]
         bridge_jsons = [
             path
-            for path in sorted((ROOT / "bridges").glob("*.json"))
+            for path in sorted(BRIDGE_DIR.glob("*.json"))
             if bridge_within_complete_tree(path)
         ]
         db_path = sync_workspace_to_sqlite(
@@ -1412,10 +1460,25 @@ def current_bio_person_catalog(max_generation: int = COMPLETE_TREE_MAX_GENERATIO
     try:
         rows = conn.execute(
             """
-            SELECT id, name, generation, group_id
-            FROM persons
-            WHERE generation BETWEEN 1 AND ?
-            ORDER BY generation, primary_page_no, id
+            SELECT
+              p.id,
+              p.name,
+              p.generation,
+              p.group_id,
+              p.primary_page_no,
+              COALESCE(
+                json_group_array(DISTINCT parent.name)
+                  FILTER (WHERE parent.name IS NOT NULL),
+                '[]'
+              ) AS parent_names_json
+            FROM persons AS p
+            LEFT JOIN relationships AS r
+              ON r.child_person_id = p.id
+            LEFT JOIN persons AS parent
+              ON parent.id = r.parent_person_id
+            WHERE p.generation BETWEEN 1 AND ?
+            GROUP BY p.id
+            ORDER BY p.generation, p.primary_page_no, p.id
             """,
             (max_generation,),
         ).fetchall()
@@ -1427,9 +1490,44 @@ def current_bio_person_catalog(max_generation: int = COMPLETE_TREE_MAX_GENERATIO
             "name": row["name"],
             "generation": row["generation"],
             "group_id": row["group_id"],
+            "primary_page_no": row["primary_page_no"],
+            "parent_names": json.loads(row["parent_names_json"] or "[]"),
         }
         for row in rows
     ]
+
+
+def refresh_bio_bundle_person_names(bundle: dict, catalog: list[dict]) -> dict:
+    person_by_id = {item["person_id"]: item for item in catalog}
+    bundle["person_catalog"] = catalog
+    for page in bundle.get("pages", []):
+        for match in page.get("matches", []):
+            recommended_id = match.get("recommended_person_id")
+            recommended = person_by_id.get(recommended_id)
+            if recommended:
+                match["recommended_person_name"] = recommended["name"]
+            refreshed_candidates = []
+            for candidate in match.get("candidates", []):
+                person = person_by_id.get(candidate.get("person_id"))
+                refreshed_candidates.append({**candidate, **person} if person else candidate)
+            match["candidates"] = refreshed_candidates
+    return bundle
+
+
+def current_bio_linked_person_ids() -> list[str]:
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT person_id
+            FROM person_biographies
+            WHERE match_status = 'reviewed_manual'
+            ORDER BY person_id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    return [row[0] for row in rows]
 
 
 def bio_bundle_for_client(project_id: str) -> dict:
@@ -1449,7 +1547,8 @@ def bio_bundle_for_client(project_id: str) -> dict:
     bundle["pages"] = pages
     bundle["project_id"] = project_id
     bundle["generation_range"] = [1, COMPLETE_TREE_MAX_GENERATION]
-    bundle["person_catalog"] = current_bio_person_catalog(COMPLETE_TREE_MAX_GENERATION)
+    refresh_bio_bundle_person_names(bundle, current_bio_person_catalog(COMPLETE_TREE_MAX_GENERATION))
+    bundle["linked_person_ids"] = current_bio_linked_person_ids()
     return bundle
 
 
@@ -1492,7 +1591,7 @@ class ReviewHandler(SimpleHTTPRequestHandler):
         if path.startswith("/gen_093_097/editor/"):
             relative = path[len("/gen_093_097/editor/") :]
             return str((GEN_EDITOR_UI_DIR / relative).resolve())
-        return str(ROOT / path.lstrip("/"))
+        return str(resolve_repo_asset_path(path).resolve())
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -1762,8 +1861,15 @@ class ReviewHandler(SimpleHTTPRequestHandler):
             payload=data,
             glyph_dir=GLYPH_ASSET_DIR,
         )
+        bridge_updates = restore_related_bridges_to_sqlite(data.get("group_id"))
         body = json.dumps(
-            {"ok": True, "mode": "db_direct", "group_id": data.get("group_id"), "db_path": str(SQLITE_DB_PATH)},
+            {
+                "ok": True,
+                "mode": "db_direct",
+                "group_id": data.get("group_id"),
+                "db_path": str(SQLITE_DB_PATH),
+                "bridge_updates": bridge_updates,
+            },
             ensure_ascii=False,
         ).encode("utf-8")
         self.send_response(200)
@@ -1787,14 +1893,9 @@ def main() -> int:
     GROUP_JSON = args.group_json.resolve()
     BIO_PROJECT_DIRS = {
         path.name: path.resolve()
-        for path in sorted(ROOT.glob("bio_*"))
+        for path in iter_bio_project_dirs()
         if bio_project_accessible(path.resolve())
     }
-    if bio_project_accessible(TEMP_ICLOUD_BIO_PROJECT_DIR):
-        BIO_PROJECT_DIRS.setdefault(
-            TEMP_ICLOUD_BIO_PROJECT_DIR.name,
-            TEMP_ICLOUD_BIO_PROJECT_DIR.resolve(),
-        )
     BIO_DEFAULT_PROJECT_ID = sorted(BIO_PROJECT_DIRS.keys())[0] if BIO_PROJECT_DIRS else None
     server = ThreadingHTTPServer((args.host, args.port), ReviewHandler)
     print(f"Serving review app at http://{args.host}:{args.port}")

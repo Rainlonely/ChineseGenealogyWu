@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-import cv2  # type: ignore
-
 from import_genealogy_to_sqlite import DEFAULT_DB_PATH
+from workspace_paths import ROOT, iter_bio_project_dirs
 
 
-ROOT = Path(__file__).resolve().parents[1]
 SQLITE_DB_PATH = DEFAULT_DB_PATH
 BIO_REVIEW_UI_DIR = ROOT / "products" / "biography-review"
+ENABLE_BLOCK_CROPS = os.getenv("FGB_BIO_REVIEW_CROP_BLOCKS", "0").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,6 +52,13 @@ def crop_block_image(
     block_index: int,
     source_page_no: int | None = None,
 ) -> str | None:
+    if not ENABLE_BLOCK_CROPS:
+        return None
+    try:
+        import cv2  # type: ignore
+    except ModuleNotFoundError:
+        return None
+
     image_path = project_dir / page["raw_image"]
     image = cv2.imread(str(image_path))
     if image is None:
@@ -85,13 +92,35 @@ def normalize_state(bundle: dict, state: dict, project_dir: Path) -> dict:
     person_catalog = {item["person_id"]: item for item in bundle.get("person_catalog", [])}
     state.setdefault("project_id", bundle.get("project_id"))
     state.setdefault("pages", {})
+    raw_dirty_page_keys = state.get("dirty_page_keys")
+    dirty_page_keys = {
+        str(page_key)
+        for page_key in raw_dirty_page_keys
+        if str(page_key) in page_map
+    } if isinstance(raw_dirty_page_keys, list) else set()
+    page_keys_to_normalize = dirty_page_keys or set(page_map)
+
+    ocr_page_keys = set(page_keys_to_normalize)
+    for page_key in page_keys_to_normalize:
+        page_state = ensure_page_state(state["pages"].setdefault(page_key, {}))
+        for biography in page_state.get("biographies", []):
+            for raw_key in biography.get("selected_block_keys") or []:
+                parsed = parse_block_key(raw_key)
+                if parsed:
+                    ocr_page_keys.add(str(parsed[0]))
 
     ocr_cache: dict[str, dict[int, dict]] = {}
-    for page_key, page in page_map.items():
+    for page_key in ocr_page_keys:
+        page = page_map.get(page_key)
+        if not page:
+            continue
         ocr_data = load_json(project_dir / page["ocr_json"], {})
         ocr_cache[page_key] = {int(item["index"]): item for item in ocr_data.get("ordered_items", [])}
 
-    for page_key, page in page_map.items():
+    for page_key in page_keys_to_normalize:
+        page = page_map.get(page_key)
+        if not page:
+            continue
         page_state = ensure_page_state(state["pages"].setdefault(page_key, {}))
         deleted = {int(idx) for idx in page_state.get("deleted_ocr_indexes", [])}
 
@@ -193,9 +222,19 @@ def normalize_state(bundle: dict, state: dict, project_dir: Path) -> dict:
 def sync_state_to_sqlite(bundle: dict, state: dict, project_dir: Path) -> None:
     project_id = bundle.get("project_id")
     page_bundle_map = {str(page["page"]): page for page in bundle.get("pages", [])}
+    raw_dirty_page_keys = state.get("dirty_page_keys")
+    dirty_page_keys = {
+        str(page_key)
+        for page_key in raw_dirty_page_keys
+        if str(page_key) in page_bundle_map
+    } if isinstance(raw_dirty_page_keys, list) else set()
     conn = sqlite3.connect(str(SQLITE_DB_PATH))
     try:
-        for page_key, page in page_bundle_map.items():
+        page_keys_to_sync = dirty_page_keys or set(page_bundle_map)
+        for page_key in page_keys_to_sync:
+            page = page_bundle_map.get(page_key)
+            if not page:
+                continue
             page_no = int(page["page"])
             page_state = ensure_page_state(state["pages"].get(page_key, {}))
             conn.execute(
@@ -222,17 +261,23 @@ def sync_state_to_sqlite(bundle: dict, state: dict, project_dir: Path) -> None:
                 ),
             )
 
-        conn.execute(
-            """
-            DELETE FROM person_biographies
-            WHERE project_id = ? AND match_status = 'reviewed_manual'
-            """,
-            (project_id,),
-        )
+        if dirty_page_keys:
+            placeholders = ",".join("?" for _ in dirty_page_keys)
+            conn.execute(
+                f"""
+                DELETE FROM person_biographies
+                WHERE project_id = ?
+                  AND match_status = 'reviewed_manual'
+                  AND source_page_no IN ({placeholders})
+                """,
+                (project_id, *[int(page_key) for page_key in dirty_page_keys]),
+            )
 
         for page_key, page_state in state.get("pages", {}).items():
             page = page_bundle_map.get(str(page_key))
             if not page:
+                continue
+            if dirty_page_keys and str(page_key) not in dirty_page_keys:
                 continue
             page_no = int(page_key)
             source_image_path = str((project_dir / page["raw_image"]).resolve())
@@ -315,6 +360,82 @@ def build_initial_state(bundle: dict) -> dict:
     }
 
 
+def current_person_catalog(max_generation: int = 112) -> list[dict]:
+    conn = sqlite3.connect(str(SQLITE_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+              p.id,
+              p.name,
+              p.generation,
+              p.group_id,
+              p.primary_page_no,
+              COALESCE(
+                json_group_array(DISTINCT parent.name)
+                  FILTER (WHERE parent.name IS NOT NULL),
+                '[]'
+              ) AS parent_names_json
+            FROM persons AS p
+            LEFT JOIN relationships AS r
+              ON r.child_person_id = p.id
+            LEFT JOIN persons AS parent
+              ON parent.id = r.parent_person_id
+            WHERE p.generation BETWEEN 1 AND ?
+            GROUP BY p.id
+            ORDER BY p.generation, p.primary_page_no, p.id
+            """,
+            (max_generation,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "person_id": row["id"],
+            "name": row["name"],
+            "generation": row["generation"],
+            "group_id": row["group_id"],
+            "primary_page_no": row["primary_page_no"],
+            "parent_names": json.loads(row["parent_names_json"] or "[]"),
+        }
+        for row in rows
+    ]
+
+
+def refresh_bundle_person_names(bundle: dict, catalog: list[dict]) -> dict:
+    person_by_id = {item["person_id"]: item for item in catalog}
+    bundle["person_catalog"] = catalog
+    for page in bundle.get("pages", []):
+        for match in page.get("matches", []):
+            recommended_id = match.get("recommended_person_id")
+            recommended = person_by_id.get(recommended_id)
+            if recommended:
+                match["recommended_person_name"] = recommended["name"]
+            refreshed_candidates = []
+            for candidate in match.get("candidates", []):
+                person = person_by_id.get(candidate.get("person_id"))
+                refreshed_candidates.append({**candidate, **person} if person else candidate)
+            match["candidates"] = refreshed_candidates
+    return bundle
+
+
+def current_linked_person_ids() -> list[str]:
+    conn = sqlite3.connect(str(SQLITE_DB_PATH))
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT person_id
+            FROM person_biographies
+            WHERE match_status = 'reviewed_manual'
+            ORDER BY person_id
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    return [row[0] for row in rows]
+
+
 def build_state_from_sqlite(bundle: dict, project_id: str | None = None) -> dict:
     state = build_initial_state(bundle)
     effective_project_id = project_id or bundle.get("project_id")
@@ -326,10 +447,14 @@ def build_state_from_sqlite(bundle: dict, project_id: str | None = None) -> dict
     try:
         rows = conn.execute(
             """
-            SELECT person_id, source_page_no, source_title_text, source_text_linear, source_text_baihua, notes_json
-            FROM person_biographies
-            WHERE project_id = ? AND match_status = 'reviewed_manual'
-            ORDER BY source_page_no, id
+            SELECT pb.person_id, p.name AS current_person_name,
+                   pb.source_page_no, pb.source_title_text, pb.source_text_linear,
+                   pb.source_text_baihua, pb.notes_json
+            FROM person_biographies AS pb
+            LEFT JOIN persons AS p
+              ON p.id = pb.person_id
+            WHERE pb.project_id = ? AND pb.match_status = 'reviewed_manual'
+            ORDER BY pb.source_page_no, pb.id
             """,
             (effective_project_id,),
         ).fetchall()
@@ -358,7 +483,7 @@ def build_state_from_sqlite(bundle: dict, project_id: str | None = None) -> dict
         page_state["biographies"].append(
             {
                 "person_id": row["person_id"],
-                "person_name": row["source_title_text"] or row["person_id"],
+                "person_name": row["current_person_name"] or row["source_title_text"] or row["person_id"],
                 "selected_block_keys": selected_block_keys,
                 "selected_ocr_indexes": selected_ocr_indexes,
                 "source_pages": source_pages,
@@ -383,6 +508,14 @@ class BiographyReviewHandler(SimpleHTTPRequestHandler):
     # appear to hang even though the TCP connection is established.
     def address_string(self) -> str:
         return self.client_address[0]
+
+    def end_headers(self) -> None:
+        parsed_path = urlparse(self.path).path
+        if parsed_path == "/review" or parsed_path.startswith("/review/") or parsed_path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        super().end_headers()
 
     @classmethod
     def resolve_project_dir(cls, project_id: str | None) -> Path:
@@ -422,6 +555,8 @@ class BiographyReviewHandler(SimpleHTTPRequestHandler):
             pages.append(page_copy)
         bundle["pages"] = pages
         bundle["project_id"] = project_id
+        refresh_bundle_person_names(bundle, current_person_catalog())
+        bundle["linked_person_ids"] = current_linked_person_ids()
         return bundle
 
     def translate_path(self, path: str) -> str:
@@ -431,6 +566,11 @@ class BiographyReviewHandler(SimpleHTTPRequestHandler):
         if parsed_path.startswith("/review/"):
             relative = parsed_path[len("/review/") :]
             return str(self.ui_dir / relative)
+        for project_id, project_dir in self.project_dirs.items():
+            prefix = f"/{project_id}/"
+            if parsed_path.startswith(prefix):
+                relative = parsed_path[len(prefix) :]
+                return str((project_dir / relative).resolve())
         return super().translate_path(path)
 
     def _send_json(self, payload: dict, status: int = 200) -> None:
@@ -500,7 +640,7 @@ def main() -> int:
     else:
         project_dirs = {
             path.name: path.resolve()
-            for path in sorted(ROOT.glob("bio_*"))
+            for path in iter_bio_project_dirs()
             if (path / "project.json").exists() and (path / "review" / "review_data.json").exists()
         }
     if not project_dirs:

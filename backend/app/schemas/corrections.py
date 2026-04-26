@@ -21,7 +21,7 @@ class CorrectionCreateRequest(BaseModel):
 
 class CorrectionCreateResponse(BaseModel):
     correction_id: int
-    status: Literal["pending"]
+    status: Literal["pending", "approved"]
 
 
 class CorrectionItem(BaseModel):

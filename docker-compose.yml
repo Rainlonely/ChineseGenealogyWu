@@ -6,8 +6,13 @@ services:
     environment:
       GENEALOGY_DB_PATH: /data/genealogy.sqlite
       GENEALOGY_READ_ONLY: "1"
+      GENEALOGY_ALLOW_DIRECT_CORRECTIONS: "${GENEALOGY_ALLOW_DIRECT_CORRECTIONS:-1}"
+      GENEALOGY_ASSET_MODE: "${GENEALOGY_ASSET_MODE:-local}"
+      GENEALOGY_WORKSPACE_DATA_ROOT: /workspace_data
+      GENEALOGY_OSS_BASE_URL: "${GENEALOGY_OSS_BASE_URL:-}"
     volumes:
-      - ./data/genealogy.sqlite:/data/genealogy.sqlite:ro
+      - ./data/genealogy.sqlite:/data/genealogy.sqlite
+      - "${FGB_WORKSPACE_DATA_ROOT:-/Users/rainwu/Library/Mobile Documents/com~apple~CloudDocs/workspace_data}:/workspace_data:ro"
     expose:
       - "8000"
     restart: unless-stopped

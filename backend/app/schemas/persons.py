@@ -13,9 +13,11 @@ class SearchPersonItem(BaseModel):
     person_source: PersonSource
     name: str
     father_name: Optional[str] = None
+    generation: Optional[int] = None
     generation_label: str
     has_biography: bool
     has_modern_extension: bool
+    glyph_image_url: Optional[str] = None
     summary_route: str
     match_reason: str
     matched_name: str
@@ -42,6 +44,7 @@ class PersonDetail(BaseModel):
     source_label: str
     has_biography: bool
     has_modern_extension: bool
+    glyph_image_url: Optional[str] = None
     modern_extension_note: Optional[str] = None
     biography_summary: Optional[str] = None
     actions: ActionHints
@@ -66,6 +69,7 @@ class RouteItem(BaseModel):
     name: str
     person_ref: str
     person_source: PersonSource
+    glyph_image_url: Optional[str] = None
     note: str
 
 
@@ -82,6 +86,7 @@ class BranchNode(BaseModel):
     relation_to_focus: str
     node_type: Literal["focus", "ancestor", "descendant", "spouse"]
     relation_type: str
+    glyph_image_url: Optional[str] = None
 
 
 class BranchColumn(BaseModel):
@@ -95,6 +100,7 @@ class BranchFocus(BaseModel):
     person_source: PersonSource
     name: str
     generation_label: str
+    glyph_image_url: Optional[str] = None
     has_modern_extension: bool = False
     modern_extension_note: Optional[str] = None
 

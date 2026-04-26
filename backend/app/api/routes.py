@@ -41,11 +41,16 @@ def build_router(person_service, submission_service, correction_service, setting
             api_version=settings.api_version,
             db_path=str(settings.db_path),
             read_only=settings.read_only,
+            allow_direct_corrections=settings.allow_direct_corrections,
         )
 
     @router.get("/api/v1/search/persons", response_model=SearchPersonsResponse)
-    def search_persons(q: str = Query(..., min_length=1), limit: int = Query(20, ge=1, le=50)) -> SearchPersonsResponse:
-        return SearchPersonsResponse(**person_service.search_persons(q.strip(), limit))
+    def search_persons(
+        q: str = Query(..., min_length=1),
+        limit: int = Query(20, ge=1, le=1000),
+        generation: int | None = Query(None, ge=1, le=200),
+    ) -> SearchPersonsResponse:
+        return SearchPersonsResponse(**person_service.search_persons(q.strip(), limit, generation=generation))
 
     @router.get("/api/v1/persons/{person_source}/{person_ref}", response_model=PersonDetailResponse)
     def person_detail(person_source: str, person_ref: str) -> PersonDetailResponse:
@@ -98,7 +103,8 @@ def build_router(person_service, submission_service, correction_service, setting
 
     @router.post("/api/v1/corrections", response_model=CorrectionCreateResponse, status_code=201)
     def create_correction(request: CorrectionCreateRequest) -> CorrectionCreateResponse:
-        ensure_writable()
+        if settings.read_only and not settings.allow_direct_corrections:
+            ensure_writable()
         payload = correction_service.create_correction_submission(request.model_dump())
         return CorrectionCreateResponse(**payload)
 

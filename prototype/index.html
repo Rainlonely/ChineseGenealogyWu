@@ -51,6 +51,10 @@
             <button class="ghost-action" data-go-screen="search">重新搜索</button>
           </div>
 
+          <div class="result-toolbar">
+            <label for="result-generation-filter">世代筛选</label>
+            <select id="result-generation-filter"></select>
+          </div>
           <div class="result-list" id="result-list"></div>
         </section>
 
@@ -141,8 +145,8 @@
         <section class="screen" id="screen-correction" data-screen="correction">
           <div class="screen-header">
             <p class="page-kicker">姓名勘误页</p>
-            <h2 id="correction-heading">提交姓名校对申请</h2>
-            <p class="page-copy">当你发现人物姓名可能存在录入或校对误差时，可提交勘误申请，由后台审核后处理。</p>
+            <h2 id="correction-heading">提交姓名校对</h2>
+            <p class="page-copy">当你发现人物姓名存在录入或校对误差时，可提交勘误并直接更正当前人物姓名。</p>
           </div>
 
           <form class="panel contribute-form">
@@ -170,11 +174,11 @@
             </label>
             <div class="submit-row">
               <div class="notice-box">
-                提交后进入待审核队列，可被处理为“改正式姓名”或“加入搜索别名”。
+                提交后会直接更正当前人物姓名，原姓名会保留为搜索别名。
               </div>
               <button type="button" class="primary-action" id="correction-submit">提交姓名勘误</button>
             </div>
-            <div class="notice-box" id="correction-status">当前只支持姓名勘误，提交后不会直接改动正式族谱数据。</div>
+            <div class="notice-box" id="correction-status">当前只支持姓名勘误，提交后会直接更正当前人物姓名。</div>
           </form>
         </section>
 

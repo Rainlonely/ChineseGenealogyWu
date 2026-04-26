@@ -3,11 +3,14 @@ const apiBase =
   window.location.search.match(/[?&]api=([^&]+)/)?.[1] ||
   "";
 let readOnlyMode = false;
+let allowDirectCorrections = false;
 
 const state = {
   activeScreen: "search",
   query: "永昌",
+  allResults: [],
   results: [],
+  generationFilter: "",
   selectedPerson: null,
   previewBranch: null,
   fullBranch: null,
@@ -18,6 +21,7 @@ const routePersonSourceKey = "person_source";
 const routePersonRefKey = "person_ref";
 
 const resultList = document.getElementById("result-list");
+const resultGenerationFilter = document.getElementById("result-generation-filter");
 const routeList = document.getElementById("route-list");
 const branchPreview = document.getElementById("branch-preview");
 const branchPreviewSvg = document.getElementById("branch-preview-svg");
@@ -132,18 +136,16 @@ function displayedApiBase() {
 
 function applyReadOnlyMode() {
   readOnlyMode = true;
-  document.querySelectorAll('[data-screen-target="correction"], [data-screen-target="contribute"]').forEach((node) => {
+  document.querySelectorAll('[data-screen-target="contribute"]').forEach((node) => {
     node.hidden = true;
   });
-  document.querySelectorAll('[data-go-screen="correction"], [data-go-screen="contribute"]').forEach((node) => {
+  document.querySelectorAll('[data-go-screen="contribute"]').forEach((node) => {
     node.hidden = true;
   });
-  const correctionSubmit = document.getElementById("correction-submit");
   const contributeSubmit = document.getElementById("contribute-submit");
-  if (correctionSubmit) correctionSubmit.disabled = true;
   if (contributeSubmit) contributeSubmit.disabled = true;
   setContributeStatus("当前部署为只读模式，线上不接受新增编辑。");
-  setCorrectionStatus("当前部署为只读模式，线上不接受姓名勘误提交。");
+  setCorrectionStatus("姓名勘误提交后会立即更正当前人物姓名。");
 }
 
 function selectedRef() {
@@ -200,7 +202,7 @@ function updateContributeHeading() {
 
 function updateCorrectionForm() {
   const name = state.selectedPerson ? state.selectedPerson.name : "当前人物";
-  document.getElementById("correction-heading").textContent = `为 ${name} 提交姓名校对申请`;
+  document.getElementById("correction-heading").textContent = `为 ${name} 提交姓名校对`;
   correctionTargetName.value = state.selectedPerson
     ? `${state.selectedPerson.name}（${state.selectedPerson.generation_label}）`
     : "";
@@ -231,6 +233,61 @@ function describeColumn(column) {
     return `${column.label} / 第${column.generation}世`;
   }
   return column.label;
+}
+
+function glyphImageHtml(node) {
+  if (!node?.glyph_image_url) return "";
+  return `
+    <div class="glyph-thumb">
+      <img src="${escapeHtml(node.glyph_image_url)}" alt="${escapeHtml(node.name)} 字形截图" loading="lazy" />
+    </div>
+  `;
+}
+
+function resultNameVisualHtml(person) {
+  const image = person?.glyph_image_url
+    ? `<span class="result-name-image"><img src="${escapeHtml(person.glyph_image_url)}" alt="${escapeHtml(person.name)} 姓名截图" loading="lazy" /></span>`
+    : "";
+  return `
+    <span class="result-name-visual">
+      ${image}
+      <span class="result-name-text">${escapeHtml(person.name)}</span>
+    </span>
+  `;
+}
+
+function resultFatherKey(person) {
+  return person.father_name || "未识别";
+}
+
+function resultGenerationSortValue(person) {
+  return Number.isFinite(Number(person.generation)) ? Number(person.generation) : 9999;
+}
+
+function resultGenerationOptions(results) {
+  return [...new Set(results.map((item) => item.generation).filter((generation) => generation !== null && generation !== undefined))]
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+}
+
+function syncResultGenerationFilter() {
+  if (!resultGenerationFilter) return;
+  const generations = resultGenerationOptions(state.allResults);
+  const current = generations.includes(Number(state.generationFilter)) ? String(state.generationFilter) : "";
+  resultGenerationFilter.innerHTML = [
+    `<option value="">全部世代</option>`,
+    ...generations.map((generation) => `<option value="${generation}">${generation}世</option>`),
+  ].join("");
+  resultGenerationFilter.value = current;
+  state.generationFilter = current;
+}
+
+function applyResultFilters() {
+  const generation = Number(state.generationFilter);
+  state.results = state.generationFilter
+    ? state.allResults.filter((person) => Number(person.generation) === generation)
+    : [...state.allResults];
 }
 
 function buildTreeLayout(columns, options = {}) {
@@ -400,6 +457,7 @@ function drawHangTree(svg, canvas, payload, options = {}) {
       card.style.width = `${position.width}px`;
       card.style.height = `${position.height}px`;
       card.innerHTML = `
+        ${glyphImageHtml(node)}
         <div class="vertical-name">${escapeHtml(node.name)}</div>
         <div class="vertical-meta">${escapeHtml(relation)}</div>
       `;
@@ -436,13 +494,36 @@ function renderResults() {
     return;
   }
 
-  state.results.forEach((person) => {
+  const groups = new Map();
+  state.results
+    .slice()
+    .sort((a, b) => (
+      resultFatherKey(a).localeCompare(resultFatherKey(b), "zh-Hans-CN") ||
+      resultGenerationSortValue(a) - resultGenerationSortValue(b) ||
+      a.name.localeCompare(b.name, "zh-Hans-CN")
+    ))
+    .forEach((person) => {
+      const key = resultFatherKey(person);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(person);
+    });
+
+  groups.forEach((people, fatherName) => {
+    const group = document.createElement("section");
+    group.className = "result-group";
+    group.innerHTML = `
+      <div class="result-group-heading">
+        <span>父：${escapeHtml(fatherName)}</span>
+        <small>${people.length} 人</small>
+      </div>
+    `;
+    people.forEach((person) => {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "result-card";
     card.innerHTML = `
       <span class="result-name">
-        <strong>${escapeHtml(person.name)}</strong>
+        ${resultNameVisualHtml(person)}
         <span class="cell-label">整行可点击查看人物详情</span>
       </span>
       <span class="result-cell">
@@ -500,7 +581,9 @@ function renderResults() {
     actions.appendChild(correctionButton);
     actions.appendChild(contributeButton);
     card.appendChild(actions);
-    resultList.appendChild(card);
+      group.appendChild(card);
+    });
+    resultList.appendChild(group);
   });
 }
 
@@ -631,8 +714,11 @@ async function searchPersons() {
     return;
   }
   setSearchStatus("正在查询，请稍候...");
-  const payload = await fetchJson(`/api/v1/search/persons?q=${encodeURIComponent(q)}&limit=20`);
-  state.results = payload.items;
+  const payload = await fetchJson(`/api/v1/search/persons?q=${encodeURIComponent(q)}&limit=1000`);
+  state.allResults = payload.items;
+  state.generationFilter = "";
+  syncResultGenerationFilter();
+  applyResultFilters();
   document.getElementById("results-heading").textContent = `“${q}” 共 ${payload.total} 条结果`;
   renderResults();
   setSearchStatus(`已找到 ${payload.total} 条可识别结果。`);
@@ -760,7 +846,7 @@ async function submitContribution() {
 }
 
 async function submitCorrection() {
-  if (readOnlyMode) {
+  if (readOnlyMode && !allowDirectCorrections) {
     setCorrectionStatus("当前部署为只读模式，线上不接受姓名勘误提交。");
     return;
   }
@@ -773,12 +859,19 @@ async function submitCorrection() {
     setCorrectionStatus("请填写更正依据，便于后台核对。");
     return;
   }
-  setCorrectionStatus("正在提交姓名勘误申请...");
+  setCorrectionStatus("正在提交并更正姓名...");
   const result = await fetchJson("/api/v1/corrections", {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  setCorrectionStatus(`提交成功，勘误编号 #${result.correction_id}，当前状态：${result.status}。`);
+  if (state.selectedPerson) {
+    state.selectedPerson.name = payload.proposed_value;
+    updateCorrectionForm();
+    document.getElementById("detail-name").textContent = payload.proposed_value;
+  }
+  correctionProposedValue.value = "";
+  correctionReason.value = "";
+  setCorrectionStatus(`已直接更正，勘误编号 #${result.correction_id}。`);
 }
 
 document.querySelectorAll("[data-go-screen]").forEach((button) => {
@@ -817,6 +910,14 @@ document.getElementById("search-submit").addEventListener("click", async () => {
   } catch (error) {
     setSearchStatus(`查询失败：${error.message}`);
   }
+});
+
+resultGenerationFilter?.addEventListener("change", () => {
+  state.generationFilter = resultGenerationFilter.value;
+  applyResultFilters();
+  const suffix = state.generationFilter ? `，当前显示 ${state.generationFilter}世 ${state.results.length} 条` : "";
+  document.getElementById("results-heading").textContent = `“${state.query}” 共 ${state.allResults.length} 条结果${suffix}`;
+  renderResults();
 });
 
 document.getElementById("search-input").addEventListener("keydown", async (event) => {
@@ -878,6 +979,7 @@ async function bootstrap() {
   replaceRouteState({ screen: state.activeScreen, selectedPerson: state.selectedPerson });
   fetchJson("/health")
     .then((health) => {
+      allowDirectCorrections = Boolean(health.allow_direct_corrections);
       if (health.read_only) {
         applyReadOnlyMode();
       }

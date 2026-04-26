@@ -76,7 +76,12 @@ def export_glyph(person_id: str, glyph_value: str | None, out_dir: Path) -> str 
     out_dir.mkdir(parents=True, exist_ok=True)
     target = out_dir / f"{person_id}.{extension}"
     target.write_bytes(payload)
-    return str(target.relative_to(ROOT))
+    try:
+        return str(target.relative_to(ROOT))
+    except ValueError:
+        if out_dir.name == "glyph_assets":
+            return f"data/glyph_assets/{target.name}"
+        return str(target)
 
 
 def sqlite_person_id(group_id: str, source_person_id: str) -> str:
@@ -469,7 +474,12 @@ def import_bridge(
     person_meta: dict[str, dict[str, Any]],
 ) -> None:
     payload = load_json(path)
-    scope_ref = payload.get("workspace_id") or path.stem
+    left_group_id = str(payload.get("left_group_id") or "").strip()
+    right_group_id = str(payload.get("right_group_id") or "").strip()
+    if left_group_id and right_group_id:
+        scope_ref = f"{MERGE_WORKSPACE_PREFIX}{left_group_id}__{right_group_id}"
+    else:
+        scope_ref = payload.get("workspace_id") or path.stem
     insert_relationships(
         conn,
         payload,

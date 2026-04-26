@@ -41,6 +41,10 @@
               </div>
               <button class="text-button" type="button" data-mobile-screen="search">重搜</button>
             </div>
+            <div class="mobile-result-toolbar">
+              <label for="mobile-result-generation-filter">世代</label>
+              <select id="mobile-result-generation-filter"></select>
+            </div>
             <div class="result-stack" id="mobile-result-list"></div>
           </section>
 
@@ -209,7 +213,7 @@
             <div class="section-head compact">
               <div>
                 <p class="section-kicker">姓名勘误页</p>
-                <h2 id="mobile-correction-heading">提交姓名校对申请</h2>
+                <h2 id="mobile-correction-heading">提交姓名校对</h2>
               </div>
             </div>
 
@@ -235,10 +239,10 @@
                 <textarea id="mobile-correction-reason" rows="4" placeholder="例如：家中抄本、页图核对、同页字辈一致等。"></textarea>
               </label>
               <div class="notice-card">
-                提交后进入待审核队列，可被处理为正式更正或搜索别名。
+                提交后会直接更正当前人物姓名，原姓名会保留为搜索别名。
               </div>
               <button class="primary-button wide" type="button" id="mobile-correction-submit">提交姓名勘误</button>
-              <p class="helper-copy" id="mobile-correction-status">当前只支持姓名勘误，提交后不会直接改动正式族谱数据。</p>
+              <p class="helper-copy" id="mobile-correction-status">当前只支持姓名勘误，提交后会直接更正当前人物姓名。</p>
             </form>
           </section>
         </main>

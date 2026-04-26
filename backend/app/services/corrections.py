@@ -12,7 +12,11 @@ class CorrectionService:
 
     def create_correction_submission(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         correction_id = self.repo.create_correction_submission(payload)
-        return {"correction_id": correction_id, "status": "pending"}
+        return self.repo.approve_correction_submission(
+            correction_id,
+            "apply_as_primary",
+            "自动应用姓名勘误",
+        )
 
     def list_correction_submissions(self) -> Dict[str, Any]:
         items = self.repo.list_correction_submissions()

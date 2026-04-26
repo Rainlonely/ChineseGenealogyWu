@@ -41,6 +41,25 @@ python3 scripts/separate_code_and_data.py --execute
 python3 scripts/separate_code_and_data.py --workspace-data-root /your/path/workspace_data --execute
 ```
 
+迁移到 iCloud 后运行本地 review/editor 服务：
+
+```bash
+./scripts/run_editor_icloud.sh
+```
+
+单独运行小传 review 服务同样使用这个环境变量：
+
+```bash
+./scripts/run_bio_review_icloud.sh
+```
+
+如需临时覆盖 iCloud 目录或 Python 解释器：
+
+```bash
+FGB_WORKSPACE_DATA_ROOT=/your/path/workspace_data ./scripts/run_editor_icloud.sh
+PYTHON_BIN=python3 ./scripts/run_editor_icloud.sh
+```
+
 ## 关于 `genealogy.sqlite` 是否入 Git
 
 建议默认不直接纳入主仓库版本管理，原因：
@@ -53,4 +72,3 @@ python3 scripts/separate_code_and_data.py --workspace-data-root /your/path/works
 1. 主仓库只保留 `db/schema.sql` 和导入脚本。
 2. SQLite 放在仓库外 `workspace_data/sqlite/`。
 3. 重要里程碑用定期快照（例如按日期复制一份），或另建专门的数据仓库管理二进制资产。
-

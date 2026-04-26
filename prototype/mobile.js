@@ -3,6 +3,7 @@ const apiBase =
   window.location.search.match(/[?&]api=([^&]+)/)?.[1] ||
   "";
 let mobileReadOnlyMode = false;
+let mobileAllowDirectCorrections = false;
 
 const mobileScreenTitles = {
   search: "搜索首页",
@@ -16,7 +17,9 @@ const mobileScreenTitles = {
 const mobileState = {
   activeScreen: "search",
   query: "永昌",
+  allResults: [],
   results: [],
+  generationFilter: "",
   selectedPerson: null,
   previewBranch: null,
   fullBranch: null,
@@ -32,6 +35,7 @@ const mobilePreviewCanvas = document.getElementById("mobile-branch-preview");
 const mobilePreviewSvg = document.getElementById("mobile-branch-preview-svg");
 const mobileTreeCanvas = document.getElementById("mobile-tree-columns");
 const mobileTreeSvg = document.getElementById("mobile-tree-columns-svg");
+const mobileResultGenerationFilter = document.getElementById("mobile-result-generation-filter");
 const mobileToggleDaughtersWrap = document.getElementById("mobile-toggle-daughters-wrap");
 const mobileToggleSpousesWrap = document.getElementById("mobile-toggle-spouses-wrap");
 const mobileDetailBranchNote = document.getElementById("mobile-detail-branch-note");
@@ -75,15 +79,13 @@ function displayedApiBase() {
 
 function applyMobileReadOnlyMode() {
   mobileReadOnlyMode = true;
-  document.querySelectorAll('[data-mobile-screen="correction"], [data-mobile-screen="contribute"]').forEach((node) => {
+  document.querySelectorAll('[data-mobile-screen="contribute"]').forEach((node) => {
     node.hidden = true;
   });
-  const correctionSubmit = document.getElementById("mobile-correction-submit");
   const contributeSubmit = document.getElementById("mobile-contribute-submit");
-  if (correctionSubmit) correctionSubmit.disabled = true;
   if (contributeSubmit) contributeSubmit.disabled = true;
   setMobileContributeStatus("当前部署为只读模式，线上不接受新增编辑。");
-  setMobileCorrectionStatus("当前部署为只读模式，线上不接受姓名勘误提交。");
+  setMobileCorrectionStatus("姓名勘误提交后会立即更正当前人物姓名。");
 }
 
 function escapeHtml(value) {
@@ -132,7 +134,7 @@ function updateMobileContributeHeading() {
 
 function updateMobileCorrectionForm() {
   const name = mobileState.selectedPerson ? mobileState.selectedPerson.name : "当前人物";
-  document.getElementById("mobile-correction-heading").textContent = `为 ${name} 提交姓名校对申请`;
+  document.getElementById("mobile-correction-heading").textContent = `为 ${name} 提交姓名校对`;
   mobileCorrectionTargetName.value = mobileState.selectedPerson
     ? `${mobileState.selectedPerson.name}（${mobileState.selectedPerson.generation_label}）`
     : "";
@@ -146,6 +148,57 @@ function mobileRelationBadge(node) {
   if (node.relation_type.includes("daughter")) return "女";
   if (node.relation_type.includes("son")) return "子";
   return "后代";
+}
+
+function mobileGlyphImageHtml(node) {
+  if (!node?.glyph_image_url) return "";
+  return `
+    <div class="mobile-glyph-thumb">
+      <img src="${escapeHtml(node.glyph_image_url)}" alt="${escapeHtml(node.name)} 字形截图" loading="lazy" />
+    </div>
+  `;
+}
+
+function mobileResultNameVisualHtml(person) {
+  const image = person?.glyph_image_url
+    ? `<span class="mobile-result-name-image"><img src="${escapeHtml(person.glyph_image_url)}" alt="${escapeHtml(person.name)} 姓名截图" loading="lazy" /></span>`
+    : "";
+  return `
+    <span class="mobile-result-name-visual">
+      ${image}
+      <span class="mobile-result-name-text">${escapeHtml(person.name)}</span>
+    </span>
+  `;
+}
+
+function mobileResultFatherKey(person) {
+  return person.father_name || "未识别";
+}
+
+function mobileResultGenerationOptions(results) {
+  return [...new Set(results.map((item) => item.generation).filter((generation) => generation !== null && generation !== undefined))]
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+}
+
+function syncMobileResultGenerationFilter() {
+  if (!mobileResultGenerationFilter) return;
+  const generations = mobileResultGenerationOptions(mobileState.allResults);
+  const current = generations.includes(Number(mobileState.generationFilter)) ? String(mobileState.generationFilter) : "";
+  mobileResultGenerationFilter.innerHTML = [
+    `<option value="">全部世代</option>`,
+    ...generations.map((generation) => `<option value="${generation}">${generation}世</option>`),
+  ].join("");
+  mobileResultGenerationFilter.value = current;
+  mobileState.generationFilter = current;
+}
+
+function applyMobileResultFilters() {
+  const generation = Number(mobileState.generationFilter);
+  mobileState.results = mobileState.generationFilter
+    ? mobileState.allResults.filter((person) => Number(person.generation) === generation)
+    : [...mobileState.allResults];
 }
 
 function mobileBuildTreeLayout(columns, options = {}) {
@@ -302,6 +355,7 @@ function drawMobileHangTree(svg, canvas, payload, options = {}) {
       card.style.width = `${position.width}px`;
       card.style.height = `${position.height}px`;
       card.innerHTML = `
+        ${mobileGlyphImageHtml(node)}
         <div class="vertical-name">${escapeHtml(node.name)}</div>
         <div class="vertical-meta">${escapeHtml(mobileRelationBadge(node))}</div>
       `;
@@ -317,14 +371,37 @@ function renderMobileResults() {
     list.innerHTML = `<div class="notice-card">没有找到匹配人物，请换一个姓名继续查询。</div>`;
     return;
   }
-  mobileState.results.forEach((person) => {
+  const groups = new Map();
+  mobileState.results
+    .slice()
+    .sort((a, b) => (
+      mobileResultFatherKey(a).localeCompare(mobileResultFatherKey(b), "zh-Hans-CN") ||
+      (Number(a.generation) || 9999) - (Number(b.generation) || 9999) ||
+      a.name.localeCompare(b.name, "zh-Hans-CN")
+    ))
+    .forEach((person) => {
+      const key = mobileResultFatherKey(person);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(person);
+    });
+
+  groups.forEach((people, fatherName) => {
+    const group = document.createElement("section");
+    group.className = "mobile-result-group";
+    group.innerHTML = `
+      <div class="mobile-result-group-heading">
+        <span>父：${escapeHtml(fatherName)}</span>
+        <small>${people.length} 人</small>
+      </div>
+    `;
+    people.forEach((person) => {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "result-mobile-card";
     card.innerHTML = `
       <div class="result-mobile-top">
         <div>
-          <strong>${escapeHtml(person.name)}</strong>
+          ${mobileResultNameVisualHtml(person)}
           <p class="helper-copy">父名：${escapeHtml(person.father_name || "未识别")}</p>
         </div>
         <span class="pill ${person.has_modern_extension ? "" : "muted"}">${escapeHtml(person.generation_label)}</span>
@@ -340,7 +417,9 @@ function renderMobileResults() {
       </div>
     `;
     card.addEventListener("click", () => selectMobilePerson(person));
-    list.appendChild(card);
+      group.appendChild(card);
+    });
+    list.appendChild(group);
   });
 }
 
@@ -441,8 +520,11 @@ async function searchMobilePersons() {
     return;
   }
   setMobileSearchStatus("正在查询，请稍候...");
-  const payload = await fetchJson(`/api/v1/search/persons?q=${encodeURIComponent(q)}&limit=20`);
-  mobileState.results = payload.items;
+  const payload = await fetchJson(`/api/v1/search/persons?q=${encodeURIComponent(q)}&limit=1000`);
+  mobileState.allResults = payload.items;
+  mobileState.generationFilter = "";
+  syncMobileResultGenerationFilter();
+  applyMobileResultFilters();
   document.getElementById("mobile-results-heading").textContent = `“${q}” 共 ${payload.total} 条`;
   renderMobileResults();
   setMobileSearchStatus(`已找到 ${payload.total} 条可识别结果。`);
@@ -521,7 +603,7 @@ async function submitMobileContribution() {
 }
 
 async function submitMobileCorrection() {
-  if (mobileReadOnlyMode) {
+  if (mobileReadOnlyMode && !mobileAllowDirectCorrections) {
     setMobileCorrectionStatus("当前部署为只读模式，线上不接受姓名勘误提交。");
     return;
   }
@@ -534,12 +616,19 @@ async function submitMobileCorrection() {
     setMobileCorrectionStatus("请填写更正依据，便于后台核对。");
     return;
   }
-  setMobileCorrectionStatus("正在提交姓名勘误申请...");
+  setMobileCorrectionStatus("正在提交并更正姓名...");
   const result = await fetchJson("/api/v1/corrections", {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  setMobileCorrectionStatus(`提交成功，勘误编号 #${result.correction_id}，当前状态：${result.status}。`);
+  if (mobileState.selectedPerson) {
+    mobileState.selectedPerson.name = payload.proposed_value;
+    updateMobileCorrectionForm();
+    document.getElementById("mobile-detail-name").textContent = payload.proposed_value;
+  }
+  mobileCorrectionProposedValue.value = "";
+  mobileCorrectionReason.value = "";
+  setMobileCorrectionStatus(`已直接更正，勘误编号 #${result.correction_id}。`);
 }
 
 document.querySelectorAll("[data-mobile-screen]").forEach((button) => {
@@ -562,6 +651,14 @@ document.getElementById("mobile-search-submit").addEventListener("click", async 
   } catch (error) {
     setMobileSearchStatus(`查询失败：${error.message}`);
   }
+});
+
+mobileResultGenerationFilter?.addEventListener("change", () => {
+  mobileState.generationFilter = mobileResultGenerationFilter.value;
+  applyMobileResultFilters();
+  const suffix = mobileState.generationFilter ? `，显示 ${mobileState.generationFilter}世 ${mobileState.results.length} 条` : "";
+  document.getElementById("mobile-results-heading").textContent = `“${mobileState.query}” 共 ${mobileState.allResults.length} 条${suffix}`;
+  renderMobileResults();
 });
 
 document.getElementById("mobile-search-input").addEventListener("keydown", async (event) => {
@@ -613,6 +710,7 @@ mobileDownwardValue.textContent = `${mobileDownwardRange.value} 代`;
 
 fetchJson("/health")
   .then((health) => {
+    mobileAllowDirectCorrections = Boolean(health.allow_direct_corrections);
     if (health.read_only) {
       applyMobileReadOnlyMode();
     }

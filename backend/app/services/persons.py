@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional
 
 from app.repositories.history import HistoryRepository
@@ -8,9 +8,29 @@ from app.repositories.modern import ModernRepository
 
 
 class PersonService:
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, asset_mode: str = "online", oss_base_url: str = ""):
         self.history_repo = HistoryRepository(db_path)
         self.modern_repo = ModernRepository(db_path)
+        self.asset_mode = asset_mode
+        self.oss_base_url = oss_base_url.rstrip("/")
+
+    def _glyph_image_url(self, row: Dict[str, Any]) -> Optional[str]:
+        if self.asset_mode == "local":
+            glyph_path = row.get("glyph_asset_path")
+            if not glyph_path:
+                return None
+            filename = PurePosixPath(str(glyph_path)).name
+            return f"/assets/glyph_assets/{filename}" if filename else None
+
+        oss_key = row.get("glyph_asset_oss_key")
+        if not oss_key:
+            return None
+        oss_key_text = str(oss_key)
+        if oss_key_text.startswith(("http://", "https://")):
+            return oss_key_text
+        if not self.oss_base_url:
+            return None
+        return f"{self.oss_base_url}/{oss_key_text.lstrip('/')}"
 
     @staticmethod
     def _modern_extension_note(has_modern_extension: bool) -> Optional[str]:
@@ -29,15 +49,15 @@ class PersonService:
 
     @staticmethod
     def _is_auto_person_ref(person_ref: str) -> bool:
-        return person_ref.startswith("p_auto_")
+        return person_ref.rsplit("::", 1)[-1].startswith("p_auto_")
 
     @staticmethod
     def _historical_person_ref(row: Dict[str, Any]) -> str:
-        return row.get("source_person_id") or row["id"]
+        return row["id"]
 
-    def search_persons(self, query: str, limit: int) -> Dict[str, Any]:
-        historical_rows = self.history_repo.search_persons(query, limit)
-        modern_rows = self.modern_repo.search_persons(query, limit)
+    def search_persons(self, query: str, limit: int, generation: Optional[int] = None) -> Dict[str, Any]:
+        historical_rows = self.history_repo.search_persons(query, limit, generation=generation)
+        modern_rows = [] if generation is not None else self.modern_repo.search_persons(query, limit)
         items: List[Dict[str, Any]] = []
         for row in historical_rows:
             items.append(
@@ -46,9 +66,11 @@ class PersonService:
                     "person_source": "historical",
                     "name": row["name"],
                     "father_name": row["father_name"],
+                    "generation": row["generation"],
                     "generation_label": self._generation_label(row["generation"]),
                     "has_biography": bool(row["has_biography"]),
                     "has_modern_extension": bool(row["has_modern_extension"]),
+                    "glyph_image_url": self._glyph_image_url(row),
                     "summary_route": self._build_route_summary("historical", self._historical_person_ref(row), row["name"]),
                     "match_reason": "按主名或别名命中",
                     "matched_name": row["matched_name"],
@@ -62,9 +84,11 @@ class PersonService:
                     "person_source": "modern",
                     "name": row["display_name"],
                     "father_name": row["father_name"],
+                    "generation": None,
                     "generation_label": "现代续修",
                     "has_biography": bool(row["has_biography"]),
                     "has_modern_extension": bool(row["has_modern_extension"]),
+                    "glyph_image_url": None,
                     "summary_route": self._build_route_summary("modern", row["id"], row["display_name"]),
                     "match_reason": "按主名或别名命中",
                     "matched_name": row["matched_name"],
@@ -132,6 +156,7 @@ class PersonService:
                     "source_label": "古籍人物",
                     "has_biography": bool(row["has_biography"]),
                     "has_modern_extension": bool(row["has_modern_extension"]),
+                    "glyph_image_url": self._glyph_image_url(row),
                     "modern_extension_note": self._modern_extension_note(bool(row["has_modern_extension"])),
                     "biography_summary": (biography or {}).get("source_text_linear") or (biography or {}).get("source_text_raw"),
                     "actions": {
@@ -155,6 +180,7 @@ class PersonService:
                 "source_label": "现代续修",
                 "has_biography": bool(row.get("bio")),
                 "has_modern_extension": bool(row["has_modern_extension"]),
+                "glyph_image_url": None,
                 "modern_extension_note": None,
                 "biography_summary": row.get("bio"),
                 "actions": {
@@ -210,6 +236,7 @@ class PersonService:
                     "name": row["name"],
                     "person_ref": self._historical_person_ref(row),
                     "person_source": "historical",
+                    "glyph_image_url": self._glyph_image_url(row),
                     "note": "父系主链",
                 }
                 for row in reversed(ancestors[-7:])
@@ -220,6 +247,7 @@ class PersonService:
                     "name": person["name"],
                     "person_ref": self._historical_person_ref(person),
                     "person_source": "historical",
+                    "glyph_image_url": self._glyph_image_url(person),
                     "note": "当前查看人物",
                 }
             )
@@ -243,6 +271,7 @@ class PersonService:
                     "name": person["display_name"],
                     "person_ref": person["id"],
                     "person_source": "modern",
+                    "glyph_image_url": None,
                     "note": "现代续修人物",
                 }
             )
@@ -253,6 +282,7 @@ class PersonService:
                     "name": person["display_name"],
                     "person_ref": person["id"],
                     "person_source": "modern",
+                    "glyph_image_url": None,
                     "note": "现代续修人物",
                 }
             )
@@ -292,6 +322,7 @@ class PersonService:
                                 "relation_to_focus": "父系祖先",
                                 "node_type": "ancestor",
                                 "relation_type": row["relation_type"],
+                                "glyph_image_url": self._glyph_image_url(row),
                             }
                         ],
                     }
@@ -305,6 +336,7 @@ class PersonService:
                     "relation_to_focus": "当前人物",
                     "node_type": "focus",
                     "relation_type": "self",
+                    "glyph_image_url": self._glyph_image_url(person),
                 }
             ]
             columns.append(
@@ -324,6 +356,7 @@ class PersonService:
                         "relation_to_focus": f"下 {level} 代",
                         "node_type": "descendant",
                         "relation_type": row["relation_type"],
+                        "glyph_image_url": self._glyph_image_url(row),
                     }
                     for row in descendants
                     if row["level"] == level
@@ -343,6 +376,7 @@ class PersonService:
                     "person_source": "historical",
                     "name": person["name"],
                     "generation_label": self._generation_label(person["generation"]),
+                    "glyph_image_url": self._glyph_image_url(person),
                     "has_modern_extension": bool(person["has_modern_extension"]),
                     "modern_extension_note": self._modern_extension_note(bool(person["has_modern_extension"])),
                 },
@@ -360,6 +394,7 @@ class PersonService:
                 "relation_to_focus": "当前人物",
                 "node_type": "focus",
                 "relation_type": "self",
+                "glyph_image_url": None,
             }
         ]
         if include_spouses:
@@ -373,6 +408,7 @@ class PersonService:
                         "relation_to_focus": "配偶",
                         "node_type": "spouse",
                         "relation_type": spouse["relation_type"],
+                        "glyph_image_url": None,
                     }
                 )
         columns.append({"label": "当前人物", "generation": None, "nodes": focus_nodes})
@@ -393,6 +429,7 @@ class PersonService:
                                 "relation_to_focus": "历史挂接点",
                                 "node_type": "ancestor",
                                 "relation_type": "lineage_attachment",
+                                "glyph_image_url": self._glyph_image_url(anchor),
                             }
                         ],
                     },
@@ -413,6 +450,7 @@ class PersonService:
                         "relation_to_focus": f"下 {level} 代",
                         "node_type": "descendant",
                         "relation_type": row["relation_type"],
+                        "glyph_image_url": None,
                     }
                 )
             if nodes:
@@ -423,6 +461,7 @@ class PersonService:
                 "person_source": "modern",
                 "name": person["display_name"],
                 "generation_label": "现代续修",
+                "glyph_image_url": None,
                 "has_modern_extension": bool(person["has_modern_extension"]),
                 "modern_extension_note": None,
             },

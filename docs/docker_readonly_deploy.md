@@ -1,9 +1,10 @@
-# Docker 只读部署（backend + prototype）
+# Docker 部署（backend + prototype）
 
-该部署模式用于线上“只查看、不编辑”。
+该部署模式默认用于“只查看 + 允许姓名勘误直接更正”。
 
 - 不包含任何 PaddleOCR / OCR 服务。
-- 后端 API 启用只读开关，所有写接口返回 `403`。
+- 后端 API 启用只读开关，续修等写接口返回 `403`。
+- 姓名勘误默认开启直接更正，用于当前二次校对阶段。
 - `prototype` 通过 Nginx 反向代理到后端 API。
 
 ## 1. 启动
@@ -26,17 +27,49 @@ docker compose up -d --build
 PROTOTYPE_PORT=28080 docker compose up -d --build
 ```
 
-## 2. 只读策略
+默认以本地图片模式启动，会把 iCloud 的 `workspace_data` 只读挂载进后端容器，用于加载人物小图：
+
+```bash
+export FGB_WORKSPACE_DATA_ROOT="$HOME/Library/Mobile Documents/com~apple~CloudDocs/workspace_data"
+GENEALOGY_ASSET_MODE=local docker compose up -d --build
+```
+
+线上 OSS 图片模式：
+
+```bash
+GENEALOGY_ASSET_MODE=online \
+GENEALOGY_OSS_BASE_URL="https://你的OSS或CDN域名" \
+docker compose up -d --build
+```
+
+本地模式使用 `persons.glyph_asset_path`，前端访问 `/assets/glyph_assets/<file>`；在线模式使用 `persons.glyph_asset_oss_key` 拼接 `GENEALOGY_OSS_BASE_URL`。
+
+## 2. 写入策略
 
 `docker-compose.yml` 已配置：
 
 - `GENEALOGY_READ_ONLY=1`
-- `./data/genealogy.sqlite:/data/genealogy.sqlite:ro`
+- `GENEALOGY_ALLOW_DIRECT_CORRECTIONS=1`
+- `./data/genealogy.sqlite:/data/genealogy.sqlite`
 
 这表示：
 
-1. API 层拒绝写操作（提交续修、姓名勘误、审核动作）。
-2. 容器内数据库文件是只读挂载。
+1. API 层拒绝续修提交、审核动作等写操作。
+2. 姓名勘误提交后直接写入 `persons.name` / `canonical_name`。
+3. 旧姓名会作为 `person_search_aliases` 保留，方便后续仍可搜索。
+4. 容器内数据库文件是可写挂载，勘误会保存到 `data/genealogy.sqlite`。
+
+如果要恢复完全只读模式：
+
+```bash
+GENEALOGY_ALLOW_DIRECT_CORRECTIONS=0 docker compose up -d
+```
+
+并将 `docker-compose.yml` 中数据库挂载改回：
+
+```yaml
+- ./data/genealogy.sqlite:/data/genealogy.sqlite:ro
+```
 
 ## 3. 数据发布
 

@@ -8,12 +8,17 @@ let selectedBlockKeys = new Set();
 let editingBiographyIndex = null;
 let manualPickerOpen = false;
 let saveTimer = null;
+let saveInFlight = Promise.resolve();
+let hasUnsavedChanges = false;
+let dirtyPageKeys = new Set();
 let manualPickerTarget = null;
 let projects = [];
 let crossPageMode = false;
 let crossPageDirection = "next";
 const SIDEBAR_STATE_KEY = "biography-review.sidebar-collapsed";
+const LAST_PROJECT_KEY = "biography-review.last-project";
 const LAST_PAGE_KEY_PREFIX = "biography-review.last-page.";
+const LAST_GENERATION_KEY_PREFIX = "biography-review.last-generation.";
 let resizeRenderTimer = null;
 
 async function fetchJson(url, options = {}) {
@@ -41,6 +46,15 @@ function lastPageKey(projectId) {
   return `${LAST_PAGE_KEY_PREFIX}${projectId || "default"}`;
 }
 
+function lastGenerationKey(projectId) {
+  return `${LAST_GENERATION_KEY_PREFIX}${projectId || "default"}`;
+}
+
+function rememberCurrentProject() {
+  if (!bundle?.project_id) return;
+  window.localStorage.setItem(LAST_PROJECT_KEY, bundle.project_id);
+}
+
 function rememberCurrentPage() {
   if (!bundle || !currentPage()) return;
   window.localStorage.setItem(lastPageKey(bundle.project_id), String(currentPage().page));
@@ -51,6 +65,19 @@ function rememberedPageIndex(projectId, pages) {
   if (!Number.isFinite(stored)) return 0;
   const idx = pages.findIndex((page) => Number(page.page) === stored);
   return idx >= 0 ? idx : 0;
+}
+
+function rememberManualGeneration() {
+  if (!bundle?.project_id) return;
+  const value = document.getElementById("manualGeneration")?.value;
+  if (!value) return;
+  window.localStorage.setItem(lastGenerationKey(bundle.project_id), value);
+}
+
+function rememberedManualGeneration(projectId, generations) {
+  const stored = Number(window.localStorage.getItem(lastGenerationKey(projectId)));
+  if (generations.includes(stored)) return stored;
+  return generations[0] || 1;
 }
 
 function initSidebarToggle() {
@@ -65,25 +92,98 @@ function initSidebarToggle() {
 }
 
 async function saveState() {
+  const pageKeysToSave = [...dirtyPageKeys];
+  if (!pageKeysToSave.length) return;
+  const pages = {};
+  pageKeysToSave.forEach((pageKey) => {
+    if (state.pages?.[pageKey]) {
+      pages[pageKey] = state.pages[pageKey];
+    }
+  });
+  const payload = {
+    project_id: state.project_id || bundle.project_id,
+    pages,
+    dirty_page_keys: pageKeysToSave,
+  };
   await fetchJson(`/api/save-state?project_id=${encodeURIComponent(bundle.project_id)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state),
+    body: JSON.stringify(payload),
   });
+  pageKeysToSave.forEach((pageKey) => dirtyPageKeys.delete(pageKey));
 }
 
-function scheduleAutoSave() {
+function markPageDirty(pageNo = currentPage()?.page) {
+  if (pageNo === undefined || pageNo === null) return;
+  dirtyPageKeys.add(String(pageNo));
+}
+
+function queueSave(successText = "已保存") {
+  if (!bundle || !state) return Promise.resolve();
+  markPageDirty();
+  hasUnsavedChanges = true;
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  updateSaveStatus("正在自动保存...");
+  saveInFlight = saveInFlight
+    .catch(() => {})
+    .then(async () => {
+      await saveState();
+      hasUnsavedChanges = dirtyPageKeys.size > 0;
+      updateSaveStatus(hasUnsavedChanges ? "有未保存改动" : successText);
+    })
+    .catch((error) => {
+      console.error(error);
+      hasUnsavedChanges = true;
+      updateSaveStatus("自动保存失败");
+      throw error;
+    });
+  return saveInFlight;
+}
+
+async function flushPendingSave(successText = "已保存") {
+  if (!bundle || !state) return;
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (hasUnsavedChanges || dirtyPageKeys.size) {
+    await queueSave(successText);
+    return;
+  }
+  await saveInFlight.catch(() => {});
+}
+
+function scheduleAutoSave(delay = 250) {
+  markPageDirty();
+  hasUnsavedChanges = true;
   updateSaveStatus("正在自动保存...");
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    try {
-      await saveState();
-      updateSaveStatus("已自动保存");
-    } catch (error) {
-      console.error(error);
-      updateSaveStatus("自动保存失败");
-    }
-  }, 250);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    queueSave("已自动保存").catch(() => {});
+  }, delay);
+}
+
+function flushSaveBeforeUnload() {
+  if (!bundle || !state || !hasUnsavedChanges) return;
+  const url = `/api/save-state?project_id=${encodeURIComponent(bundle.project_id)}`;
+  const body = JSON.stringify({
+    ...state,
+    dirty_page_keys: [...dirtyPageKeys],
+  });
+  if (navigator.sendBeacon) {
+    navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+    return;
+  }
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+  }).catch(() => {});
 }
 
 function currentPage() {
@@ -107,6 +207,39 @@ function parseBlockKey(key) {
 
 function pageByNo(pageNo) {
   return bundle.pages.find((page) => Number(page.page) === Number(pageNo)) || null;
+}
+
+function catalogPerson(personId) {
+  return bundle?.person_catalog?.find((item) => item.person_id === personId) || null;
+}
+
+function personContextLabel(person) {
+  const parentNames = Array.isArray(person?.parent_names) ? person.parent_names.filter(Boolean) : [];
+  const parentText = parentNames.length ? parentNames.join("、") : "未接";
+  const pageText = person?.primary_page_no ? ` | 页 ${person.primary_page_no}` : "";
+  return `父：${parentText} | ${person.generation}世${pageText}`;
+}
+
+function linkedBiographyPersonIds(options = {}) {
+  const ids = new Set(bundle?.linked_person_ids || []);
+  Object.entries(state?.pages || {}).forEach(([pageKey, pageState]) => {
+    (pageState.biographies || []).forEach((biography, index) => {
+      if (
+        options.exceptPageKey !== undefined &&
+        String(options.exceptPageKey) === String(pageKey) &&
+        options.exceptIndex === index
+      ) {
+        return;
+      }
+      if (biography.person_id) ids.add(biography.person_id);
+    });
+  });
+  return ids;
+}
+
+function personHasLinkedBiography(personId, options = {}) {
+  if (!personId) return false;
+  return linkedBiographyPersonIds(options).has(personId);
 }
 
 function displayedPages() {
@@ -147,6 +280,7 @@ function renderStats() {
     <div class="project-range">页码 ${pageRange || "-"}</div>
   `;
   document.getElementById("projectSelect").onchange = async (event) => {
+    await flushPendingSave("已保存");
     await loadProject(event.target.value);
   };
   const stats = bundle.stats || {};
@@ -167,6 +301,7 @@ function renderPageList() {
     const biographyCount = ensurePageState(page.page).biographies.length;
     button.textContent = `第 ${page.page} 页${biographyCount ? ` | 传记 ${biographyCount}` : ""}`;
     button.onclick = async () => {
+      await flushPendingSave("已保存");
       currentPageIndex = index;
       activePersonId = null;
       activePersonLabel = "";
@@ -365,26 +500,33 @@ function renderManualPicker() {
   if (!manualPickerOpen) return;
 
   const generations = [...new Set(bundle.person_catalog.map((item) => item.generation))].sort((a, b) => a - b);
-  if (!generationSelect.dataset.ready) {
+  if (generationSelect.dataset.projectId !== bundle.project_id) {
     generationSelect.innerHTML = generations.map((g) => `<option value="${g}">${g}世</option>`).join("");
-    generationSelect.dataset.ready = "1";
+    generationSelect.value = String(rememberedManualGeneration(bundle.project_id, generations));
+    generationSelect.dataset.projectId = bundle.project_id;
   }
   const generation = Number(generationSelect.value || generations[0] || 1);
   if (!generationSelect.value && generations.length) generationSelect.value = String(generations[0]);
   const query = (searchInput.value || "").trim();
+  const linkedPersonIds = linkedBiographyPersonIds();
 
   const results = bundle.person_catalog
     .filter((item) => item.generation === generation)
+    .filter((item) => !linkedPersonIds.has(item.person_id))
     .map((item) => ({ ...item, score: scorePersonSearch(item.name, query) }))
     .filter((item) => item.score >= 0)
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "zh-Hans-CN"))
     .slice(0, 20);
 
   resultWrap.innerHTML = "";
+  if (!results.length) {
+    resultWrap.textContent = "无可选人物";
+    return;
+  }
   results.forEach((item) => {
     const row = document.createElement("div");
     row.className = "manual-search-item";
-    row.innerHTML = `<div><strong>${item.name}</strong><div>${item.person_id} | ${item.generation}世</div></div>`;
+    row.innerHTML = `<div><strong>${item.name}</strong><div>${personContextLabel(item)}</div></div>`;
     const btn = document.createElement("button");
     btn.textContent = "选择此人物";
     btn.onclick = () => {
@@ -436,7 +578,7 @@ function renderMatches() {
     const chosenPersonId = item._manual
       ? pageState.manual_matches[item._manualIndex]?.selected_person_id
       : pageState.title_assignments?.[String(item.ocr_index)]?.selected_person_id ?? item.recommended_person_id;
-    const chosenPerson = bundle.person_catalog.find((x) => x.person_id === chosenPersonId);
+    const chosenPerson = catalogPerson(chosenPersonId);
 
     const wrap = document.createElement("div");
     wrap.className = "match-item";
@@ -457,12 +599,14 @@ function renderMatches() {
 
     if (!item._manual) {
       const currentValue = pageState.title_assignments?.[String(item.ocr_index)]?.selected_person_id ?? item.recommended_person_id ?? "";
-      if (!item.candidates?.length) {
+      const candidates = (item.candidates || []).filter((candidate) => !personHasLinkedBiography(candidate.person_id));
+      if (!candidates.length) {
         const empty = document.createElement("div");
         empty.textContent = "无候选";
         wrap.appendChild(empty);
       } else {
-        item.candidates.forEach((candidate) => {
+        candidates.forEach((candidate) => {
+          const currentCandidate = catalogPerson(candidate.person_id) || candidate;
           const label = document.createElement("label");
           label.className = "candidate-option";
           const input = document.createElement("input");
@@ -480,7 +624,7 @@ function renderMatches() {
             scheduleAutoSave();
           };
           label.appendChild(input);
-          label.append(` ${candidate.name} (${candidate.person_id}, ${candidate.generation}世)`);
+          label.append(` ${currentCandidate.name} (${personContextLabel(currentCandidate)})`);
           wrap.appendChild(label);
         });
       }
@@ -603,7 +747,7 @@ function renderDraftPanel() {
       renderDraftPanel();
       renderPageList();
       renderViewers();
-      scheduleAutoSave();
+      queueSave("已保存").catch(() => {});
     };
     div.appendChild(delBtn);
     container.appendChild(div);
@@ -621,7 +765,19 @@ function addBiography() {
     alert("当前人物还没有挂上传记文字块。");
     return;
   }
-  const person = bundle.person_catalog.find((x) => x.person_id === activePersonId);
+  const person = catalogPerson(activePersonId);
+  if (!person) {
+    alert("当前人物不是人物库中的有效人物，请先从人物库选择具体人物。");
+    return;
+  }
+  const duplicateCheckOptions = {
+    exceptPageKey: currentPage().page,
+    exceptIndex: editingBiographyIndex,
+  };
+  if (personHasLinkedBiography(activePersonId, duplicateCheckOptions)) {
+    alert("该人物已经关联过小传，请不要重复写入。");
+    return;
+  }
   const sourcePages = [...new Set(selectedEntries.map((item) => item.pageNo))];
   const biographyRecord = {
     person_id: activePersonId,
@@ -642,7 +798,7 @@ function addBiography() {
   renderDraftPanel();
   renderPageList();
   renderViewers();
-  scheduleAutoSave();
+  queueSave("已保存").catch(() => {});
 }
 
 async function renderCurrentPage() {
@@ -662,11 +818,14 @@ async function renderCurrentPage() {
 }
 
 async function loadProject(projectId) {
-  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  await flushPendingSave("已保存");
+  const effectiveProjectId = projectId || window.localStorage.getItem(LAST_PROJECT_KEY) || "";
+  const query = effectiveProjectId ? `?project_id=${encodeURIComponent(effectiveProjectId)}` : "";
   const payload = await fetchJson(`/api/review-data${query}`);
   bundle = payload.bundle;
   state = payload.state;
   projects = payload.projects || [];
+  rememberCurrentProject();
   currentPageIndex = rememberedPageIndex(bundle.project_id, bundle.pages);
   currentOcrMap = new Map();
   activePersonId = null;
@@ -684,6 +843,14 @@ async function loadProject(projectId) {
 
 async function main() {
   initSidebarToggle();
+  window.addEventListener("pagehide", flushSaveBeforeUnload);
+  window.addEventListener("beforeunload", (event) => {
+    flushSaveBeforeUnload();
+    if (hasUnsavedChanges || saveTimer) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
   window.addEventListener("resize", () => {
     if (!bundle) return;
     if (resizeRenderTimer) clearTimeout(resizeRenderTimer);
@@ -702,7 +869,10 @@ async function main() {
     manualPickerOpen = true;
     renderManualPicker();
   };
-  document.getElementById("manualGeneration").onchange = renderManualPicker;
+  document.getElementById("manualGeneration").onchange = () => {
+    rememberManualGeneration();
+    renderManualPicker();
+  };
   document.getElementById("manualSearch").oninput = renderManualPicker;
   document.getElementById("clearSelectionBtn").onclick = () => {
     selectedBlockKeys = new Set();
@@ -712,12 +882,14 @@ async function main() {
   };
   document.getElementById("addBiographyBtn").onclick = addBiography;
   document.getElementById("crossPageToggle").onchange = async (event) => {
+    await flushPendingSave("已保存");
     crossPageMode = event.target.checked;
     selectedBlockKeys = new Set();
     clearBiographyEditing();
     await renderCurrentPage();
   };
   document.getElementById("crossPageDirection").onchange = async (event) => {
+    await flushPendingSave("已保存");
     crossPageDirection = event.target.value;
     selectedBlockKeys = new Set();
     clearBiographyEditing();
@@ -725,6 +897,7 @@ async function main() {
   };
   document.getElementById("prevPageBtn").onclick = async () => {
     if (currentPageIndex <= 0) return;
+    await flushPendingSave("已保存");
     currentPageIndex -= 1;
     activePersonId = null;
     activePersonLabel = "";
@@ -734,6 +907,7 @@ async function main() {
   };
   document.getElementById("nextPageBtn").onclick = async () => {
     if (currentPageIndex >= bundle.pages.length - 1) return;
+    await flushPendingSave("已保存");
     currentPageIndex += 1;
     activePersonId = null;
     activePersonLabel = "";

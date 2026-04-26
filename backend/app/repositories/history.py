@@ -27,17 +27,20 @@ class HistoryRepository:
         finally:
             conn.close()
 
-    def search_persons(self, query: str, limit: int) -> List[Dict[str, Any]]:
+    def search_persons(self, query: str, limit: int, generation: Optional[int] = None) -> List[Dict[str, Any]]:
         search_like = f"%{query}%"
+        generation_filter = "AND p.generation = ?" if generation is not None else ""
         conn = connect(self.db_path)
         try:
             primary_rows = conn.execute(
-                """
+                f"""
                 SELECT
                   p.id,
                   p.source_person_id,
                   p.name,
                   p.generation,
+                  p.glyph_asset_path,
+                  p.glyph_asset_oss_key,
                   (
                     SELECT fp.name
                     FROM relationships AS r
@@ -66,7 +69,8 @@ class HistoryRepository:
                     ELSE p.name
                   END AS matched_name
                 FROM persons AS p
-                WHERE p.name LIKE ? OR COALESCE(p.canonical_name, '') LIKE ?
+                WHERE (p.name LIKE ? OR COALESCE(p.canonical_name, '') LIKE ?)
+                  {generation_filter}
                 ORDER BY
                   CASE WHEN p.name = ? THEN 0 ELSE 1 END,
                   p.generation,
@@ -74,15 +78,27 @@ class HistoryRepository:
                   p.name
                 LIMIT ?
                 """,
-                (query, query, query, query, search_like, search_like, query, limit),
+                (
+                    query,
+                    query,
+                    query,
+                    query,
+                    search_like,
+                    search_like,
+                    *([generation] if generation is not None else []),
+                    query,
+                    limit,
+                ),
             ).fetchall()
             alias_rows = conn.execute(
-                """
+                f"""
                 SELECT
                   p.id,
                   p.source_person_id,
                   p.name,
                   p.generation,
+                  p.glyph_asset_path,
+                  p.glyph_asset_oss_key,
                   (
                     SELECT fp.name
                     FROM relationships AS r
@@ -111,6 +127,7 @@ class HistoryRepository:
                 WHERE psa.person_source = 'historical'
                   AND psa.status = 'active'
                   AND psa.alias_text LIKE ?
+                  {generation_filter}
                 ORDER BY
                   CASE WHEN psa.alias_text = ? THEN 0 ELSE 1 END,
                   p.generation,
@@ -118,7 +135,7 @@ class HistoryRepository:
                   p.name
                 LIMIT ?
                 """,
-                (query, search_like, query, limit),
+                (query, search_like, *([generation] if generation is not None else []), query, limit),
             ).fetchall()
 
             deduped: Dict[str, Dict[str, Any]] = {}
@@ -160,6 +177,8 @@ class HistoryRepository:
                   p.generation,
                   p.group_id,
                   p.primary_page_no,
+                  p.glyph_asset_path,
+                  p.glyph_asset_oss_key,
                   p.review_status,
                   p.remark,
                   (
@@ -238,6 +257,8 @@ class HistoryRepository:
                     p.source_person_id,
                     p.name,
                     p.generation,
+                    p.glyph_asset_path,
+                    p.glyph_asset_oss_key,
                     'father_child' AS relation_type
                   FROM relationships AS r
                   JOIN persons AS p
@@ -250,6 +271,8 @@ class HistoryRepository:
                     p.source_person_id,
                     p.name,
                     p.generation,
+                    p.glyph_asset_path,
+                    p.glyph_asset_oss_key,
                     'father_child' AS relation_type
                   FROM ancestor_chain
                   JOIN relationships AS r
@@ -282,6 +305,8 @@ class HistoryRepository:
                     p.source_person_id,
                     p.name,
                     p.generation,
+                    p.glyph_asset_path,
+                    p.glyph_asset_oss_key,
                     r.relation_type
                   FROM relationships AS r
                   JOIN persons AS p
@@ -294,6 +319,8 @@ class HistoryRepository:
                     p.source_person_id,
                     p.name,
                     p.generation,
+                    p.glyph_asset_path,
+                    p.glyph_asset_oss_key,
                     r.relation_type
                   FROM descendant_chain
                   JOIN relationships AS r

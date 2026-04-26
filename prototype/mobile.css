@@ -213,6 +213,46 @@ input[type="range"] {
   gap: 12px;
 }
 
+.mobile-result-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mobile-result-toolbar label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.mobile-result-toolbar select {
+  flex: 1;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.mobile-result-group {
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-result-group-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.mobile-result-group-heading small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .result-mobile-card {
   padding: 16px;
   text-align: left;
@@ -222,6 +262,42 @@ input[type="range"] {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+}
+
+.mobile-result-name-visual {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mobile-result-name-image {
+  width: 116px;
+  min-height: 50px;
+  max-height: 78px;
+  border-radius: 8px;
+  border: 1px solid rgba(217, 199, 176, 0.78);
+  background: #fff;
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  flex: 0 0 auto;
+  padding: 4px;
+}
+
+.mobile-result-name-image img {
+  width: 100%;
+  height: auto;
+  max-height: 70px;
+  object-fit: contain;
+  display: block;
+}
+
+.mobile-result-name-text {
+  font-family: "Noto Serif SC", "Songti SC", "STSong", serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
 }
 
 .result-mobile-meta {
@@ -632,6 +708,24 @@ input[type="range"] {
 .mobile-tree-node-vertical.is-daughter {
   border-color: #bb7896;
   background: #fff7fb;
+}
+
+.mobile-glyph-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px solid rgba(217, 199, 176, 0.78);
+  background: #fff;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.mobile-glyph-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .mobile-tree-node-vertical .vertical-name {

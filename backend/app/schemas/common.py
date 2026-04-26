@@ -8,3 +8,4 @@ class HealthResponse(BaseModel):
     api_version: str
     db_path: str
     read_only: bool
+    allow_direct_corrections: bool = False

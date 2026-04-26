@@ -42,6 +42,42 @@ def test_search_same_name_returns_list(tmp_path: Path) -> None:
         assert "generation_label" in item
 
 
+def test_glyph_url_modes(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    db_copy = tmp_path / "genealogy.sqlite"
+    shutil.copyfile(repo_root / "data" / "genealogy.sqlite", db_copy)
+
+    local_app = create_app(
+        Settings(
+            repo_root=repo_root,
+            db_path=db_copy,
+            read_only=True,
+            asset_mode="local",
+            workspace_data_root=repo_root / "data",
+        )
+    )
+    local_client = TestClient(local_app)
+    local_response = local_client.get("/api/v1/search/persons", params={"q": "泰伯", "limit": 1})
+    assert local_response.status_code == 200
+    assert local_response.json()["items"][0]["glyph_image_url"].startswith("/assets/glyph_assets/")
+
+    online_app = create_app(
+        Settings(
+            repo_root=repo_root,
+            db_path=db_copy,
+            read_only=True,
+            asset_mode="online",
+            oss_base_url="https://oss.example.test",
+        )
+    )
+    online_client = TestClient(online_app)
+    online_response = online_client.get("/api/v1/search/persons", params={"q": "泰伯", "limit": 1})
+    assert online_response.status_code == 200
+    assert online_response.json()["items"][0]["glyph_image_url"].startswith(
+        "https://oss.example.test/genealogy-jpg/workspace/data/glyph_assets/"
+    )
+
+
 def test_search_collapses_auto_duplicates_with_same_visible_signature(tmp_path: Path) -> None:
     client = build_client(tmp_path)
     response = client.get("/api/v1/search/persons", params={"q": "茂"})
@@ -156,14 +192,21 @@ def test_correction_submission_can_be_created_and_listed(tmp_path: Path) -> None
     }
     create_response = client.post("/api/v1/corrections", json=payload)
     assert create_response.status_code == 201
-    correction_id = create_response.json()["correction_id"]
+    created = create_response.json()
+    correction_id = created["correction_id"]
+    assert created["status"] == "approved"
 
     list_response = client.get("/api/v1/admin/corrections")
     assert list_response.status_code == 200
-    assert any(item["id"] == correction_id for item in list_response.json()["items"])
+    assert any(
+        item["id"] == correction_id
+        and item["status"] == "approved"
+        and item["resolution_type"] == "apply_as_primary"
+        for item in list_response.json()["items"]
+    )
 
 
-def test_alias_correction_can_make_search_match(tmp_path: Path) -> None:
+def test_correction_submission_updates_primary_name_immediately(tmp_path: Path) -> None:
     client = build_client(tmp_path)
     create_response = client.post(
         "/api/v1/corrections",
@@ -175,24 +218,19 @@ def test_alias_correction_can_make_search_match(tmp_path: Path) -> None:
             "field_name": "name",
             "current_value": "永昌",
             "proposed_value": "永长",
-            "reason": "测试作为别名处理",
-            "evidence_note": "测试别名命中",
+            "reason": "测试直接更正主名",
+            "evidence_note": "测试主名命中",
         },
     )
-    correction_id = create_response.json()["correction_id"]
-
-    approve_response = client.post(
-        f"/api/v1/admin/corrections/{correction_id}/approve",
-        json={"resolution_type": "apply_as_alias", "review_note": "作为别名收录"},
-    )
-    assert approve_response.status_code == 200
+    assert create_response.status_code == 201
+    assert create_response.json()["status"] == "approved"
 
     search_response = client.get("/api/v1/search/persons", params={"q": "永长"})
     assert search_response.status_code == 200
     items = search_response.json()["items"]
     assert any(
-        item["person_ref"] == "p_168_005"
+        item["person_ref"].endswith("::p_168_005")
         and item["person_source"] == "historical"
-        and item["match_type"] == "alias_exact"
+        and item["match_type"] == "primary_exact"
         for item in items
     )
